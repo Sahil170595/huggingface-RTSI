@@ -16,6 +16,7 @@ Probe prompts and raw completions are held server-side and never rendered.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import gradio as gr
@@ -24,6 +25,7 @@ import plotly.graph_objects as go
 
 from rtsi_core import classify_risk
 from features import live_rtsi, load_substrate_feature_rows
+import cert_signer
 
 # ---------------------------------------------------------------------------
 # Paths + startup data load
@@ -63,6 +65,10 @@ def load_judge_results() -> dict | None:
 # Loaded once at import; the Judge Agreement tab reads this, never recomputes.
 JUDGE_RESULTS = load_judge_results()
 
+# Ed25519 signing key for safety certificates — created ONCE at startup.
+# Loads GRADIO_CERT_SIGNING_KEY_HEX if pinned, else an ephemeral keypair.
+SIGNING_KEY = cert_signer.SigningKey.from_env_or_generate()
+
 # Fixed axes for the matrix (order matters for display).
 MODELS = ["qwen2.5-1.5b", "phi-2", "llama3.2-1b", "llama3.2-3b", "qwen2.5-7b", "mistral-7b"]
 QUANTS = ["GPTQ", "AWQ", "Q2_K", "Q3_K_S", "Q4_K_M", "Q5_K_M", "Q6_K", "Q8_0"]
@@ -91,6 +97,12 @@ ROUTING = {
     "HIGH": "ROUTE TO SAFE BASELINE",
     "UNKNOWN": "INSUFFICIENT SIGNAL",
 }
+
+# Certificate verdict from the refusal-stability band: LOW->PASS, MODERATE->REVIEW,
+# HIGH->ROUTE (route to safe baseline). Drives the signed safety attestation.
+VERDICT_FROM_BAND = {"LOW": "PASS", "MODERATE": "REVIEW", "HIGH": "ROUTE"}
+VERDICT_COLOR = {"PASS": "#16a34a", "REVIEW": "#d97706", "ROUTE": "#dc2626", "UNKNOWN": "#6b7280"}
+VERDICT_BG = {"PASS": "#dcfce7", "REVIEW": "#fef3c7", "ROUTE": "#fee2e2", "UNKNOWN": "#f3f4f6"}
 
 # Headline operating point (validated): route the 9 HIGH cells.
 OP_ROUTED_PCT = 20.0
@@ -433,6 +445,159 @@ def build_disagreement_by_zone_fig(by_zone: dict) -> go.Figure:
             xref="paper", yref="paper", x=0.5, y=0.5,
         )
     return fig
+
+
+# ---------------------------------------------------------------------------
+# Safety Certificate — Ed25519-signed attestation of the two screen results
+# ---------------------------------------------------------------------------
+
+def _judge_agreement_result() -> dict:
+    """Pull {kappa, band} from the loaded judge_results.json for the cert.
+
+    Judge agreement is a cohort-level property (one κ over the fixed probe set),
+    so the same {kappa, band} attaches to every config. Falls back to a neutral
+    UNKNOWN band if the cache is absent so cert issuance never crashes.
+    """
+    if not JUDGE_RESULTS:
+        return {"kappa": 0.0, "band": "UNKNOWN"}
+    ag = JUDGE_RESULTS.get("agreement", {}) or {}
+    kappa = ag.get("kappa")
+    return {
+        "kappa": round(float(kappa), 4) if isinstance(kappa, (int, float)) else 0.0,
+        "band": str(ag.get("band", "UNKNOWN")),
+    }
+
+
+def _verdict_banner(verdict: str, pubkey_hex: str, config: dict) -> str:
+    """Prominent verdict + public-key strip shown above the raw cert JSON."""
+    color = VERDICT_COLOR.get(verdict, VERDICT_COLOR["UNKNOWN"])
+    bg = VERDICT_BG.get(verdict, VERDICT_BG["UNKNOWN"])
+    model = config.get("model", "?")
+    quant = config.get("quant", "?")
+    return (
+        f'<div style="margin-top:6px;padding:16px 20px;border-radius:12px;'
+        f'background:{bg};border:2px solid {color};">'
+        f'<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">'
+        f'<span style="font-size:13px;font-weight:600;color:#374151;'
+        f'letter-spacing:.06em;">SIGNED VERDICT</span>'
+        f'<span style="font-size:26px;font-weight:800;color:#fff;'
+        f'background:{color};padding:5px 18px;border-radius:999px;'
+        f'letter-spacing:.05em;">{verdict}</span>'
+        f'<span style="font-size:14px;font-weight:700;color:#374151;">'
+        f"{model} · {quant}</span>"
+        f"</div>"
+        f'<div style="margin-top:10px;font-size:12px;color:#6b7280;'
+        f'letter-spacing:.03em;">PUBLIC KEY (Ed25519)</div>'
+        f'<code style="font-size:12px;color:#312e81;word-break:break-all;'
+        f'font-variant-numeric:tabular-nums;">{pubkey_hex}</code>'
+        f"</div>"
+    )
+
+
+def _verify_banner(valid: bool, detail: str = "") -> str:
+    """Big ✓ VALID (green) / ✗ INVALID (red) signature-verification result."""
+    if valid:
+        color, bg, mark, word = "#16a34a", "#dcfce7", "✓", "VALID"
+    else:
+        color, bg, mark, word = "#dc2626", "#fee2e2", "✗", "INVALID"
+    detail_line = (
+        f'<div style="margin-top:8px;font-size:14px;color:#374151;">{detail}</div>'
+        if detail else ""
+    )
+    return (
+        f'<div style="margin-top:6px;padding:18px 22px;border-radius:12px;'
+        f'background:{bg};border:2px solid {color};text-align:center;">'
+        f'<span style="font-size:34px;font-weight:800;color:{color};'
+        f'letter-spacing:.04em;">{mark} {word}</span>'
+        f"{detail_line}"
+        f"</div>"
+    )
+
+
+def issue_certificate(model: str, quant: str):
+    """Look up both screen results, compute the verdict, and sign a certificate.
+
+    Returns (cert_dict_for_state, pretty_json_for_display, verdict_banner_html,
+    cleared_verify_banner). Never echoes corpus text — only scores/bands.
+    """
+    cleared = ""  # reset any prior verify/tamper result on a fresh issue
+    if not model or not quant:
+        return None, "", _msg("Pick a model and a quant, then click "
+                              "<b>Issue signed certificate</b>."), cleared
+
+    cell = DF[(DF["base_model"] == model) & (DF["quant"] == quant)]
+    if not len(cell):
+        return (
+            None, "",
+            _msg(
+                f"<b>{model} · {quant}</b> is not in the measured matrix, so there "
+                f"is no refusal-stability result to certify. Pick a measured cell.",
+                color="#b45309",
+            ),
+            cleared,
+        )
+
+    row = cell.iloc[0]
+    refusal_score = round(float(row["rtsi_score"]), 4)
+    refusal_band = str(row["rtsi_risk"])
+    verdict = VERDICT_FROM_BAND.get(refusal_band, "REVIEW")
+
+    screen_results = {
+        "refusal_stability": {"score": refusal_score, "band": refusal_band},
+        "judge_agreement": _judge_agreement_result(),
+    }
+
+    signed = cert_signer.build_and_sign_cert(
+        config={"model": model, "quant": quant},
+        screen_results=screen_results,
+        verdict=verdict,
+        issued_at=datetime.now(timezone.utc).isoformat(),
+        key=SIGNING_KEY,
+    )
+
+    pretty = json.dumps(signed, indent=2, sort_keys=True)
+    banner = _verdict_banner(verdict, signed.get("pubkey_hex", ""), signed["config"])
+    return signed, pretty, banner, cleared
+
+
+def verify_displayed_cert(cert: dict | None):
+    """Verify the Ed25519 signature on the currently-displayed certificate."""
+    if not cert:
+        return _verify_banner(False, "No certificate issued yet — click "
+                                     "<b>Issue signed certificate</b> first.")
+    valid = cert_signer.verify_cert(cert)
+    if valid:
+        detail = ("Signature verifies against the embedded public key — this "
+                  "verdict is authentic and untampered.")
+    else:
+        detail = "Signature does not verify."
+    return _verify_banner(valid, detail)
+
+
+def tamper_test(cert: dict | None):
+    """Flip one field of the issued cert, then verify — proving tamper-evidence.
+
+    Returns (tampered_pretty_json, invalid_banner_html). The original signed cert
+    in state is untouched; only this local copy is mutated for the demo.
+    """
+    if not cert:
+        return "", _verify_banner(False, "No certificate issued yet — click "
+                                         "<b>Issue signed certificate</b> first.")
+    # Copy so the genuine cert in gr.State stays intact and re-verifiable.
+    forged = json.loads(json.dumps(cert))
+    original = str(forged.get("verdict"))
+    flipped = "PASS" if original != "PASS" else "ROUTE"
+    forged["verdict"] = flipped  # silently downgrade the safety verdict
+
+    valid = cert_signer.verify_cert(forged)  # expected: False
+    pretty = json.dumps(forged, indent=2, sort_keys=True)
+    detail = (
+        f"Flipped <code>verdict</code> <b>{original} → {flipped}</b> on the signed "
+        f"cert. The Ed25519 signature no longer matches the payload, so "
+        f"verification fails — the tampering is caught."
+    )
+    # If this ever verifies True the demo is broken; surface it honestly.
+    return pretty, _verify_banner(valid, detail)
 
 
 # ---------------------------------------------------------------------------
@@ -821,6 +986,55 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                     "backend."
                     "</div>"
                 )
+
+        # ----- Safety Certificate (Ed25519-signed attestation) ---------------
+        with gr.Tab("Safety Certificate"):
+            gr.Markdown(
+                "Issue a **cryptographically signed safety certificate** for a "
+                "**(model, quant)** config. It attests both screen results — the "
+                "refusal-drift score/band and the inter-judge agreement κ/band — "
+                "and a verdict, then signs the whole thing with an **Ed25519** key."
+            )
+            gr.Markdown(
+                "Each certificate is signed with an Ed25519 key. **Anyone** can "
+                "verify with the public key that the safety verdict for this config "
+                "is authentic and untampered — a portable, verifiable safety "
+                "attestation. Verdict mapping: **LOW → PASS**, **MODERATE → "
+                "REVIEW**, **HIGH → ROUTE** (route to a safe baseline)."
+            )
+
+            # Holds the genuine signed cert between button clicks.
+            cert_state = gr.State(None)
+
+            with gr.Row():
+                cert_model_dd = gr.Dropdown(MODELS, label="Model", value=HEADLINE_MODEL)
+                cert_quant_dd = gr.Dropdown(QUANTS, label="Quantization", value=HEADLINE_QUANT)
+            with gr.Row():
+                issue_btn = gr.Button("Issue signed certificate", variant="primary")
+                verify_btn = gr.Button("Verify signature")
+                tamper_btn = gr.Button("Tamper test", variant="stop")
+
+            cert_verdict_html = gr.HTML()
+            cert_verify_html = gr.HTML()
+            cert_code = gr.Code(label="Signed certificate (canonical JSON)", language="json")
+
+            gr.HTML(
+                '<div style="margin-top:10px;padding:8px 12px;border-radius:8px;'
+                'background:#eef2ff;color:#3730a3;font-size:13px;">'
+                "🔒 The certificate carries only screen results, bands, and the "
+                "verdict — never any probe prompt or model output. The signed "
+                "payload is canonical JSON (sorted keys) of every field except the "
+                "public key and signature."
+                "</div>"
+            )
+
+            issue_btn.click(
+                issue_certificate,
+                [cert_model_dd, cert_quant_dd],
+                [cert_state, cert_code, cert_verdict_html, cert_verify_html],
+            )
+            verify_btn.click(verify_displayed_cert, [cert_state], [cert_verify_html])
+            tamper_btn.click(tamper_test, [cert_state], [cert_code, cert_verify_html])
 
         # ----- Tab 3 ---------------------------------------------------------
         with gr.Tab("About"):
