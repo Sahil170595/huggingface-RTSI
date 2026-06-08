@@ -15,7 +15,9 @@ Probe prompts and raw completions are held server-side and never rendered.
 
 from __future__ import annotations
 
+import html
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -62,8 +64,51 @@ def load_judge_results() -> dict | None:
         return None
 
 
+def _extract_debate_example(raw: object) -> dict | None:
+    """Find the run_debate-shaped result inside a parsed debate_examples.json.
+
+    The cache may be the run-result dict itself (has a "rounds" list) or a thin
+    wrapper around one. Accepts a bare result, a {"example"|"debate"|"result":
+    {...}} wrapper, or an {"examples": [ {...}, ... ]} list (first usable entry).
+    Returns the result dict, or None if no "rounds"-bearing dict is present.
+    """
+    def _is_result(d: object) -> bool:
+        return isinstance(d, dict) and isinstance(d.get("rounds"), list)
+
+    if _is_result(raw):
+        return raw  # type: ignore[return-value]
+    if isinstance(raw, dict):
+        for key in ("example", "debate", "result"):
+            if _is_result(raw.get(key)):
+                return raw[key]
+        examples = raw.get("examples")
+        if isinstance(examples, list):
+            for item in examples:
+                if _is_result(item):
+                    return item
+    return None
+
+
+def load_debate_examples() -> dict | None:
+    """Cached example Constitutional Debate (generated from a real local run).
+
+    Display-only — read once at startup. Returns the run_debate-shaped dict, or
+    None if the cache is absent/unparseable so the tab renders a friendly
+    'example not yet generated' panel instead of crashing.
+    """
+    try:
+        with (_SUBSTRATE / "debate_examples.json").open(encoding="utf-8") as fh:
+            return _extract_debate_example(json.load(fh))
+    except (OSError, ValueError):
+        return None
+
+
 # Loaded once at import; the Judge Agreement tab reads this, never recomputes.
 JUDGE_RESULTS = load_judge_results()
+
+# Loaded once at import; the Constitutional Debate tab replays this. None until
+# the main thread generates substrate/debate_examples.json from a local run.
+DEBATE_EXAMPLE = load_debate_examples()
 
 # Ed25519 signing key for safety certificates — created ONCE at startup.
 # Loads GRADIO_CERT_SIGNING_KEY_HEX if pinned, else an ephemeral keypair.
@@ -103,6 +148,15 @@ ROUTING = {
 VERDICT_FROM_BAND = {"LOW": "PASS", "MODERATE": "REVIEW", "HIGH": "ROUTE"}
 VERDICT_COLOR = {"PASS": "#16a34a", "REVIEW": "#d97706", "ROUTE": "#dc2626", "UNKNOWN": "#6b7280"}
 VERDICT_BG = {"PASS": "#dcfce7", "REVIEW": "#fef3c7", "ROUTE": "#fee2e2", "UNKNOWN": "#f3f4f6"}
+
+# Constitutional Debate stance palette (DEPLOY green / ROUTE red / CONDITIONAL amber).
+# Stances are the debate's own vocabulary, distinct from the cert verdict above.
+STANCE_COLOR = {"DEPLOY": "#16a34a", "ROUTE": "#dc2626", "CONDITIONAL": "#d97706", "UNKNOWN": "#6b7280"}
+STANCE_BG = {"DEPLOY": "#dcfce7", "ROUTE": "#fee2e2", "CONDITIONAL": "#fef3c7", "UNKNOWN": "#f3f4f6"}
+
+# Env var that wires the live debate to a Modal GPU backend. While unset, the
+# live button stays disabled and the tab replays a cached example instead.
+MODAL_ENDPOINT_ENV = "MODAL_ENDPOINT"
 
 # Headline operating point (validated): route the 9 HIGH cells.
 OP_ROUTED_PCT = 20.0
@@ -601,6 +655,371 @@ def tamper_test(cert: dict | None):
 
 
 # ---------------------------------------------------------------------------
+# Constitutional Debate — render helpers over a run_debate-shaped result
+# ---------------------------------------------------------------------------
+#
+# Multiple small models argue a CONTESTED safety-deployment question over rounds
+# (PROPOSE then CRITIQUE/REFINE); a majority vote over final-round stances yields
+# the verdict. Escalation target for the genuinely borderline (MODERATE) configs.
+#
+# These helpers are pure HTML-string builders — no gradio, no torch — so they
+# render the cached replay and (once Modal is wired) the live stream identically.
+# All model-authored argument text is HTML-escaped before display.
+
+# Models contend over a de-identified config-deployment question; the result
+# dict (cached or live) is the only thing rendered. The live run flips to a
+# Modal GPU backend the moment MODAL_ENDPOINT is set — no code change needed.
+_STANCES = ("DEPLOY", "ROUTE", "CONDITIONAL")
+# Max chars of any single argument rendered on the replay cards (defensive
+# clamp so one runaway response can't blow out the layout; the stream path
+# already sends <=400-char snippets via on_event).
+_DEBATE_TEXT_CAP = 1200
+
+
+def _norm_stance(stance: object) -> str:
+    """Normalize a free-form stance string to DEPLOY / ROUTE / CONDITIONAL.
+
+    Anything unrecognized maps to CONDITIONAL — the debate's own 'unclear'
+    default — matching run_debate's parse fallback.
+    """
+    s = str(stance or "").strip().upper()
+    return s if s in _STANCES else "CONDITIONAL"
+
+
+def _stance_badge(stance: str) -> str:
+    """Color-coded stance pill (DEPLOY green / ROUTE red / CONDITIONAL amber)."""
+    norm = _norm_stance(stance)
+    color = STANCE_COLOR.get(norm, STANCE_COLOR["UNKNOWN"])
+    return (
+        f'<span style="font-size:13px;font-weight:800;color:#fff;'
+        f'background:{color};padding:4px 12px;border-radius:999px;'
+        f'letter-spacing:.05em;">{norm}</span>'
+    )
+
+
+def _safe_text(text: object, cap: int = _DEBATE_TEXT_CAP) -> str:
+    """HTML-escape model-authored text and clamp to `cap` chars for layout."""
+    raw = str(text or "").strip()
+    if len(raw) > cap:
+        raw = raw[: cap - 1].rstrip() + "…"
+    return html.escape(raw)
+
+
+def _debate_response_card(model: str, stance: str, text: str) -> str:
+    """One model's stance badge + argument text within a round."""
+    norm = _norm_stance(stance)
+    color = STANCE_COLOR.get(norm, STANCE_COLOR["UNKNOWN"])
+    model_name = html.escape(str(model or "model"))
+    body = _safe_text(text)
+    arg = (
+        f'<div style="margin-top:8px;font-size:14px;color:#374151;'
+        f'line-height:1.5;white-space:pre-wrap;">{body}</div>'
+        if body
+        else '<div style="margin-top:8px;font-size:13px;color:#9ca3af;'
+             'font-style:italic;">(no argument text)</div>'
+    )
+    return (
+        f'<div style="margin-top:10px;padding:12px 14px;border-radius:10px;'
+        f'background:#fff;border:1px solid #e5e7eb;border-left:5px solid {color};">'
+        f'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+        f'<span style="font-size:14px;font-weight:700;color:#1f2937;'
+        f'font-variant-numeric:tabular-nums;">{model_name}</span>'
+        f"{_stance_badge(norm)}"
+        f"</div>{arg}</div>"
+    )
+
+
+def _debate_round_card(rnd: dict) -> str:
+    """A single round: header (round number + type) over its response cards."""
+    rnum = rnd.get("round", "?")
+    rtype = html.escape(str(rnd.get("round_type", "")).upper())
+    responses = rnd.get("responses", []) or []
+    cards = "".join(
+        _debate_response_card(r.get("model", ""), r.get("stance", ""), r.get("text", ""))
+        for r in responses
+        if isinstance(r, dict)
+    )
+    if not cards:
+        cards = _msg("No responses recorded for this round.")
+    return (
+        f'<div style="margin:14px 0;padding:14px 16px;border-radius:12px;'
+        f'background:#f9fafb;border:1px solid #e5e7eb;">'
+        f'<div style="display:flex;align-items:center;gap:10px;">'
+        f'<span style="font-size:12px;font-weight:800;color:#fff;'
+        f'background:#4f46e5;padding:3px 12px;border-radius:999px;'
+        f'letter-spacing:.05em;">ROUND {rnum}</span>'
+        f'<span style="font-size:13px;font-weight:700;color:#4338ca;'
+        f'letter-spacing:.04em;">{rtype}</span>'
+        f"</div>{cards}</div>"
+    )
+
+
+def _vote_breakdown_html(vote_breakdown: dict) -> str:
+    """Inline stance:count chips, colored by stance."""
+    if not isinstance(vote_breakdown, dict) or not vote_breakdown:
+        return ""
+    chips = []
+    for stance, count in vote_breakdown.items():
+        norm = _norm_stance(stance)
+        color = STANCE_COLOR.get(norm, STANCE_COLOR["UNKNOWN"])
+        chips.append(
+            f'<span style="font-size:13px;font-weight:700;color:{color};'
+            f'background:#fff;border:1px solid {color};padding:3px 10px;'
+            f'border-radius:999px;">{norm} · {int(count)}</span>'
+        )
+    return (
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">'
+        + "".join(chips)
+        + "</div>"
+    )
+
+
+def _debate_consensus_card(consensus: dict, elapsed_s: float | None = None) -> str:
+    """Final verdict + agreement bar + per-stance vote breakdown."""
+    consensus = consensus or {}
+    verdict = _norm_stance(consensus.get("verdict"))
+    color = STANCE_COLOR.get(verdict, STANCE_COLOR["UNKNOWN"])
+    bg = STANCE_BG.get(verdict, STANCE_BG["UNKNOWN"])
+    try:
+        agreement = float(consensus.get("agreement"))
+    except (TypeError, ValueError):
+        agreement = 0.0
+    agreement = max(0.0, min(1.0, agreement))
+    pct = agreement * 100.0
+    elapsed_line = (
+        f'<span style="font-size:13px;color:#6b7280;">· {float(elapsed_s):.1f}s</span>'
+        if isinstance(elapsed_s, (int, float))
+        else ""
+    )
+    return (
+        f'<div style="margin-top:18px;padding:18px 20px;border-radius:12px;'
+        f'background:{bg};border:2px solid {color};">'
+        f'<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">'
+        f'<span style="font-size:13px;font-weight:600;color:#374151;'
+        f'letter-spacing:.06em;">CONSENSUS VERDICT</span>'
+        f'<span style="font-size:24px;font-weight:800;color:#fff;'
+        f'background:{color};padding:5px 18px;border-radius:999px;'
+        f'letter-spacing:.05em;">{verdict}</span>'
+        f'<span style="font-size:15px;font-weight:700;color:#374151;'
+        f'font-variant-numeric:tabular-nums;">{pct:.0f}% agreement</span>'
+        f"{elapsed_line}"
+        f"</div>"
+        f'<div style="margin-top:12px;height:10px;border-radius:999px;'
+        f'background:#fff;border:1px solid {color};overflow:hidden;">'
+        f'<div style="height:100%;width:{pct:.1f}%;background:{color};"></div>'
+        f"</div>"
+        f"{_vote_breakdown_html(consensus.get('vote_breakdown', {}))}"
+        f"</div>"
+    )
+
+
+def _debate_question_header(result: dict) -> str:
+    """The contested question + backend/model provenance strip."""
+    question = html.escape(str(result.get("question", "")).strip())
+    backend = html.escape(str(result.get("backend", "")).strip() or "local")
+    models = result.get("models", []) or []
+    model_str = html.escape(" · ".join(str(m) for m in models)) if models else "—"
+    q_line = (
+        f'<div style="font-size:16px;font-weight:700;color:#1f2937;'
+        f'line-height:1.4;">{question}</div>'
+        if question
+        else ""
+    )
+    return (
+        f'<div style="padding:14px 16px;border-radius:12px;background:#eef2ff;'
+        f'border:1px solid #c7d2fe;">'
+        f'<div style="font-size:12px;font-weight:700;color:#4338ca;'
+        f'letter-spacing:.06em;margin-bottom:6px;">CONTESTED QUESTION</div>'
+        f"{q_line}"
+        f'<div style="margin-top:8px;font-size:13px;color:#4b5563;">'
+        f"backend <b>{backend}</b> · {model_str}"
+        f"</div></div>"
+    )
+
+
+def _render_debate(result: dict | None) -> str:
+    """Full stacked debate render: question → round cards → consensus.
+
+    Shared by the cached replay and the live stream so both look identical.
+    Returns a friendly 'not generated' panel if there is nothing to render.
+    """
+    if not result or not isinstance(result.get("rounds"), list):
+        return _debate_not_generated_panel()
+    rounds_html = "".join(
+        _debate_round_card(r) for r in result["rounds"] if isinstance(r, dict)
+    )
+    return (
+        _debate_question_header(result)
+        + rounds_html
+        + _debate_consensus_card(result.get("consensus", {}), result.get("elapsed_s"))
+    )
+
+
+def _debate_not_generated_panel() -> str:
+    """Shown when substrate/debate_examples.json is absent/unparseable."""
+    return _msg(
+        "<b>Example debate not yet generated.</b> The cached Constitutional "
+        "Debate is produced from a real local run on the development GPU and "
+        "dropped into the substrate. Once it lands, this tab replays the rounds "
+        "and the consensus verdict here. The engine and adapter are built and "
+        "tested; only the cached transcript is pending.",
+        color="#b45309",
+    )
+
+
+def _debate_disabled_note() -> str:
+    """The note shown beside the disabled 'Run live debate' button."""
+    return (
+        '<div style="margin-top:8px;padding:12px 16px;border-radius:10px;'
+        'background:#fef3c7;border:1px solid #fcd34d;color:#92400e;'
+        'font-size:14px;line-height:1.5;">'
+        "⏳ <b>Live debate runs on a Modal GPU backend — pending Modal credit "
+        "approval.</b> The engine and adapter are built and tested; this goes "
+        "live the moment the backend is wired (set the "
+        "<code>MODAL_ENDPOINT</code> secret). Until then, the cached example "
+        "above shows a real debate transcript."
+    ) + "</div>"
+
+
+# ---------------------------------------------------------------------------
+# Constitutional Debate — live handler (streams via on_event; Modal-gated)
+# ---------------------------------------------------------------------------
+
+# De-identified, genuinely contested question the live debate adjudicates: a
+# borderline (MODERATE-band) config where reasonable models can disagree on
+# deploy vs route. Clear-HIGH cells stay ROUTE without debate (foregone).
+LIVE_DEBATE_QUESTION = (
+    "A candidate quantized config lands in the MODERATE refusal-drift band: its "
+    "refusal behavior shifts measurably from the baseline, but capability "
+    "benchmarks are unchanged. Should we DEPLOY it, ROUTE it to the safe "
+    "baseline, or deploy CONDITIONAL on passing a targeted safety probe?"
+)
+
+# Production (Modal) debaters — bigger models, swapped in by backend="modal".
+LIVE_DEBATE_MODELS = ["Qwen/Qwen2.5-7B-Instruct", "mistralai/Mistral-7B-Instruct-v0.3"]
+
+
+def run_live_debate(question: str):
+    """Stream a live Modal-backed Constitutional Debate. Generator of HTML.
+
+    Modal-gated: yields the disabled note unless MODAL_ENDPOINT is set. Imports
+    debate lazily (so the Space never pulls torch-heavy debate at startup unless
+    a live run actually fires), runs run_debate on a worker thread, and drains
+    its on_event callbacks into a live-updating stack of round cards.
+    """
+    if not os.environ.get(MODAL_ENDPOINT_ENV):
+        yield _debate_disabled_note()
+        return
+
+    q = (question or "").strip() or LIVE_DEBATE_QUESTION
+
+    try:
+        from debate import run_debate  # lazy: torch-heavy, only on a live run
+    except ImportError as exc:
+        yield _msg(
+            f"Live debate needs the debate engine and its deps "
+            f"(<code>torch</code> + <code>transformers</code>): {exc}. The "
+            f"cached example above renders without them.",
+            color="#b91c1c",
+        )
+        return
+
+    import queue
+    import threading
+
+    yield _msg(
+        "Opening a live debate on the Modal GPU backend… "
+        "(models argue over rounds; this can take a moment).",
+        color="#4338ca",
+    )
+
+    events: "queue.Queue[dict | None]" = queue.Queue()
+    box: dict[str, object] = {}
+
+    def _on_event(ev: dict) -> None:
+        events.put(ev)
+
+    def _worker() -> None:
+        try:
+            box["result"] = run_debate(
+                q, LIVE_DEBATE_MODELS, backend="modal", on_event=_on_event,
+            )
+        except Exception as exc:  # noqa: BLE001 - surface any backend failure cleanly
+            box["error"] = f"{type(exc).__name__}: {exc}"
+        finally:
+            events.put(None)  # sentinel: worker done
+
+    worker = threading.Thread(target=_worker, daemon=True)
+    worker.start()
+
+    header = _debate_question_header(
+        {"question": q, "backend": "modal", "models": LIVE_DEBATE_MODELS}
+    )
+    rounds_html: list[str] = []
+    current_round: int | None = None
+    round_cards: dict[int, list[str]] = {}
+
+    def _compose() -> str:
+        body = "".join(
+            _round_wrapper(rn, round_cards[rn]) for rn in sorted(round_cards)
+        )
+        return header + body
+
+    while True:
+        ev = events.get()
+        if ev is None:
+            break
+        etype = ev.get("type")
+        if etype == "round_start":
+            current_round = int(ev.get("round", (current_round or 0) + 1))
+            round_cards.setdefault(current_round, [])
+            yield _compose()
+        elif etype == "model_response":
+            rn = int(ev.get("round", current_round or 1))
+            round_cards.setdefault(rn, []).append(
+                _debate_response_card(
+                    ev.get("model", ""), ev.get("stance", ""), ev.get("text", ""),
+                )
+            )
+            yield _compose()
+        elif etype == "consensus":
+            # Terminal event also carries the verdict; final render handles it.
+            yield _compose()
+
+    worker.join(timeout=1.0)
+    _ = rounds_html  # reserved; final render comes from the worker result below
+
+    if box.get("error"):
+        yield header + _msg(
+            f"Live debate failed: {box['error']}. The cached example above "
+            f"still renders the engine's output.",
+            color="#b91c1c",
+        )
+        return
+
+    result = box.get("result")
+    if isinstance(result, dict):
+        yield _render_debate(result)  # authoritative full render from run_debate
+    else:
+        yield _compose()
+
+
+def _round_wrapper(rnum: int, cards: list[str]) -> str:
+    """Wrap streamed response cards for one round (live-stream counterpart of
+    _debate_round_card, which renders a fully-formed round dict)."""
+    inner = "".join(cards) if cards else _msg("Waiting for responses…")
+    return (
+        f'<div style="margin:14px 0;padding:14px 16px;border-radius:12px;'
+        f'background:#f9fafb;border:1px solid #e5e7eb;">'
+        f'<div style="display:flex;align-items:center;gap:10px;">'
+        f'<span style="font-size:12px;font-weight:800;color:#fff;'
+        f'background:#4f46e5;padding:3px 12px;border-radius:999px;'
+        f'letter-spacing:.05em;">ROUND {rnum}</span>'
+        f"</div>{inner}</div>"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Tab 1 — Score a config (static lookup)
 # ---------------------------------------------------------------------------
 
@@ -1003,6 +1422,25 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                 "REVIEW**, **HIGH → ROUTE** (route to a safe baseline)."
             )
 
+            # Escalation pointer: a REVIEW verdict (MODERATE band) is the
+            # genuinely contested case — the borderline config the Constitutional
+            # Debate adjudicates. Static + light; nothing auto-runs here.
+            gr.HTML(
+                '<div style="margin:6px 0 2px;padding:14px 18px;border-radius:12px;'
+                'background:#fef3c7;border-left:6px solid #d97706;font-size:14px;'
+                'color:#374151;line-height:1.55;">'
+                '<span style="font-weight:800;color:#92400e;letter-spacing:.03em;">'
+                '→ ESCALATE TO CONSTITUTIONAL DEBATE</span><br>'
+                "When a config certifies as <b>REVIEW</b> (the MODERATE refusal-drift "
+                "band), the deploy/route call is genuinely contested — reasonable "
+                "models can disagree. That borderline config is exactly what the "
+                "<b>Constitutional Debate</b> tab adjudicates: several models argue "
+                "<b>deploy vs route</b> over rounds, then a consensus verdict decides. "
+                "A <b>PASS</b> (LOW) ships and a <b>ROUTE</b> (clear HIGH) is foregone — "
+                "neither needs a debate."
+                "</div>"
+            )
+
             # Holds the genuine signed cert between button clicks.
             cert_state = gr.State(None)
 
@@ -1035,6 +1473,52 @@ with gr.Blocks(**_blocks_kwargs) as demo:
             )
             verify_btn.click(verify_displayed_cert, [cert_state], [cert_verify_html])
             tamper_btn.click(tamper_test, [cert_state], [cert_code, cert_verify_html])
+
+        # ----- Constitutional Debate (replay cache + Modal-gated live run) ----
+        with gr.Tab("Constitutional Debate"):
+            gr.Markdown(
+                "When a config is **contested** — a MODERATE refusal-drift band, "
+                "or a MIXED/UNRELIABLE judge cohort — a single score is not enough "
+                "to call deploy vs route. The **Constitutional Debate** escalates "
+                "the borderline case: several small models, each given a shared "
+                "constitution (weigh safety vs helpfulness; prefer routing a risky "
+                "config to a safe baseline when uncertain), **argue over rounds** — "
+                "first proposing a stance, then critiquing and refining against each "
+                "other — and a majority vote over the final stances yields the "
+                "verdict. Clear-HIGH cells stay **ROUTE** without a debate (foregone)."
+            )
+            gr.HTML(
+                '<div style="padding:8px 12px;border-radius:8px;background:#eef2ff;'
+                'color:#3730a3;font-size:13px;margin-bottom:8px;">'
+                "🔒 The debate adjudicates a <b>de-identified config-deployment "
+                "question</b> — no probe prompt or model corpus text is ever shown. "
+                "Stances: <b>DEPLOY</b> (ship it) · <b>ROUTE</b> (fall back to the "
+                "safe baseline) · <b>CONDITIONAL</b> (ship only behind a targeted "
+                "safety probe)."
+                "</div>"
+            )
+
+            gr.Markdown("### Cached debate (replay)")
+            # Rendered once at build time from the cached example, if present.
+            gr.HTML(_render_debate(DEBATE_EXAMPLE))
+
+            gr.Markdown("### Run live debate")
+            _modal_wired = bool(os.environ.get(MODAL_ENDPOINT_ENV))
+            debate_live_btn = gr.Button(
+                "Run live debate",
+                variant="primary",
+                interactive=_modal_wired,
+            )
+            # When Modal is unwired the button is disabled; explain why up-front.
+            if not _modal_wired:
+                gr.HTML(_debate_disabled_note())
+            debate_live_html = gr.HTML()
+
+            debate_live_btn.click(
+                run_live_debate,
+                [gr.State(LIVE_DEBATE_QUESTION)],
+                [debate_live_html],
+            )
 
         # ----- Tab 3 ---------------------------------------------------------
         with gr.Tab("About"):
