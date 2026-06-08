@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+_applog.txt
+.venv/
+.env
+.DS_Store
+# HF / transformers caches
+.cache/
+~/.cache/huggingface/
+transformers_cache/
+hf_cache/

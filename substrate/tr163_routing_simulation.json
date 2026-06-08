@@ -1,0 +1,482 @@
+{
+  "experiment": "tr163_rtsi_gated_dtype_routing",
+  "evaluation_mode": "in_sample",
+  "n_cells": 45,
+  "risk_distribution": {
+    "LOW": 23,
+    "MODERATE": 13,
+    "HIGH": 9
+  },
+  "material_loss_cutoff": 0.05,
+  "total_gap": 0.113778,
+  "pareto_points": [
+    {
+      "threshold": 0.6881,
+      "fraction_routed": 0.0222,
+      "total_gap": 0.113778,
+      "residual_gap": 0.102222,
+      "recovered": 0.011556,
+      "recovered_pct_of_gap": 10.16,
+      "n_routed": 1,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.7078,
+      "fraction_routed": 0.0222,
+      "total_gap": 0.113778,
+      "residual_gap": 0.102222,
+      "recovered": 0.011556,
+      "recovered_pct_of_gap": 10.16,
+      "n_routed": 1,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.7274,
+      "fraction_routed": 0.0222,
+      "total_gap": 0.113778,
+      "residual_gap": 0.102222,
+      "recovered": 0.011556,
+      "recovered_pct_of_gap": 10.16,
+      "n_routed": 1,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.7471,
+      "fraction_routed": 0.0222,
+      "total_gap": 0.113778,
+      "residual_gap": 0.102222,
+      "recovered": 0.011556,
+      "recovered_pct_of_gap": 10.16,
+      "n_routed": 1,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.7667,
+      "fraction_routed": 0.0222,
+      "total_gap": 0.113778,
+      "residual_gap": 0.102222,
+      "recovered": 0.011556,
+      "recovered_pct_of_gap": 10.16,
+      "n_routed": 1,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.7864,
+      "fraction_routed": 0.0222,
+      "total_gap": 0.113778,
+      "residual_gap": 0.102222,
+      "recovered": 0.011556,
+      "recovered_pct_of_gap": 10.16,
+      "n_routed": 1,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.6292,
+      "fraction_routed": 0.0444,
+      "total_gap": 0.113778,
+      "residual_gap": 0.089778,
+      "recovered": 0.024,
+      "recovered_pct_of_gap": 21.09,
+      "n_routed": 2,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.6488,
+      "fraction_routed": 0.0444,
+      "total_gap": 0.113778,
+      "residual_gap": 0.089778,
+      "recovered": 0.024,
+      "recovered_pct_of_gap": 21.09,
+      "n_routed": 2,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.6685,
+      "fraction_routed": 0.0444,
+      "total_gap": 0.113778,
+      "residual_gap": 0.089778,
+      "recovered": 0.024,
+      "recovered_pct_of_gap": 21.09,
+      "n_routed": 2,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.5702,
+      "fraction_routed": 0.0667,
+      "total_gap": 0.113778,
+      "residual_gap": 0.069778,
+      "recovered": 0.044,
+      "recovered_pct_of_gap": 38.67,
+      "n_routed": 3,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.5898,
+      "fraction_routed": 0.0667,
+      "total_gap": 0.113778,
+      "residual_gap": 0.069778,
+      "recovered": 0.044,
+      "recovered_pct_of_gap": 38.67,
+      "n_routed": 3,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.6095,
+      "fraction_routed": 0.0667,
+      "total_gap": 0.113778,
+      "residual_gap": 0.069778,
+      "recovered": 0.044,
+      "recovered_pct_of_gap": 38.67,
+      "n_routed": 3,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.4523,
+      "fraction_routed": 0.1111,
+      "total_gap": 0.113778,
+      "residual_gap": 0.045778,
+      "recovered": 0.068,
+      "recovered_pct_of_gap": 59.77,
+      "n_routed": 5,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.4719,
+      "fraction_routed": 0.1111,
+      "total_gap": 0.113778,
+      "residual_gap": 0.045778,
+      "recovered": 0.068,
+      "recovered_pct_of_gap": 59.77,
+      "n_routed": 5,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.4916,
+      "fraction_routed": 0.1111,
+      "total_gap": 0.113778,
+      "residual_gap": 0.045778,
+      "recovered": 0.068,
+      "recovered_pct_of_gap": 59.77,
+      "n_routed": 5,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.5112,
+      "fraction_routed": 0.1111,
+      "total_gap": 0.113778,
+      "residual_gap": 0.045778,
+      "recovered": 0.068,
+      "recovered_pct_of_gap": 59.77,
+      "n_routed": 5,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.5309,
+      "fraction_routed": 0.1111,
+      "total_gap": 0.113778,
+      "residual_gap": 0.045778,
+      "recovered": 0.068,
+      "recovered_pct_of_gap": 59.77,
+      "n_routed": 5,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.5505,
+      "fraction_routed": 0.1111,
+      "total_gap": 0.113778,
+      "residual_gap": 0.045778,
+      "recovered": 0.068,
+      "recovered_pct_of_gap": 59.77,
+      "n_routed": 5,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.413,
+      "fraction_routed": 0.1778,
+      "total_gap": 0.113778,
+      "residual_gap": 0.031333,
+      "recovered": 0.082444,
+      "recovered_pct_of_gap": 72.46,
+      "n_routed": 8,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.4326,
+      "fraction_routed": 0.1778,
+      "total_gap": 0.113778,
+      "residual_gap": 0.031333,
+      "recovered": 0.082444,
+      "recovered_pct_of_gap": 72.46,
+      "n_routed": 8,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.3933,
+      "fraction_routed": 0.2,
+      "total_gap": 0.113778,
+      "residual_gap": 0.027111,
+      "recovered": 0.086667,
+      "recovered_pct_of_gap": 76.17,
+      "n_routed": 9,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.4,
+      "fraction_routed": 0.2,
+      "total_gap": 0.113778,
+      "residual_gap": 0.027111,
+      "recovered": 0.086667,
+      "recovered_pct_of_gap": 76.17,
+      "n_routed": 9,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.354,
+      "fraction_routed": 0.2222,
+      "total_gap": 0.113778,
+      "residual_gap": 0.026889,
+      "recovered": 0.086889,
+      "recovered_pct_of_gap": 76.37,
+      "n_routed": 10,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.3736,
+      "fraction_routed": 0.2222,
+      "total_gap": 0.113778,
+      "residual_gap": 0.026889,
+      "recovered": 0.086889,
+      "recovered_pct_of_gap": 76.37,
+      "n_routed": 10,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.3147,
+      "fraction_routed": 0.2444,
+      "total_gap": 0.113778,
+      "residual_gap": 0.023556,
+      "recovered": 0.090222,
+      "recovered_pct_of_gap": 79.3,
+      "n_routed": 11,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.3343,
+      "fraction_routed": 0.2444,
+      "total_gap": 0.113778,
+      "residual_gap": 0.023556,
+      "recovered": 0.090222,
+      "recovered_pct_of_gap": 79.3,
+      "n_routed": 11,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.2754,
+      "fraction_routed": 0.2667,
+      "total_gap": 0.113778,
+      "residual_gap": 0.022444,
+      "recovered": 0.091333,
+      "recovered_pct_of_gap": 80.27,
+      "n_routed": 12,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.295,
+      "fraction_routed": 0.2667,
+      "total_gap": 0.113778,
+      "residual_gap": 0.022444,
+      "recovered": 0.091333,
+      "recovered_pct_of_gap": 80.27,
+      "n_routed": 12,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.2557,
+      "fraction_routed": 0.2889,
+      "total_gap": 0.113778,
+      "residual_gap": 0.017556,
+      "recovered": 0.096222,
+      "recovered_pct_of_gap": 84.57,
+      "n_routed": 13,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.2361,
+      "fraction_routed": 0.3111,
+      "total_gap": 0.113778,
+      "residual_gap": 0.014,
+      "recovered": 0.099778,
+      "recovered_pct_of_gap": 87.7,
+      "n_routed": 14,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.2164,
+      "fraction_routed": 0.3333,
+      "total_gap": 0.113778,
+      "residual_gap": 0.012444,
+      "recovered": 0.101333,
+      "recovered_pct_of_gap": 89.06,
+      "n_routed": 15,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.1771,
+      "fraction_routed": 0.3556,
+      "total_gap": 0.113778,
+      "residual_gap": 0.012444,
+      "recovered": 0.101333,
+      "recovered_pct_of_gap": 89.06,
+      "n_routed": 16,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.1967,
+      "fraction_routed": 0.3556,
+      "total_gap": 0.113778,
+      "residual_gap": 0.012444,
+      "recovered": 0.101333,
+      "recovered_pct_of_gap": 89.06,
+      "n_routed": 16,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.1378,
+      "fraction_routed": 0.4,
+      "total_gap": 0.113778,
+      "residual_gap": 0.010222,
+      "recovered": 0.103556,
+      "recovered_pct_of_gap": 91.02,
+      "n_routed": 18,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.1574,
+      "fraction_routed": 0.4,
+      "total_gap": 0.113778,
+      "residual_gap": 0.010222,
+      "recovered": 0.103556,
+      "recovered_pct_of_gap": 91.02,
+      "n_routed": 18,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.1181,
+      "fraction_routed": 0.4667,
+      "total_gap": 0.113778,
+      "residual_gap": 0.009333,
+      "recovered": 0.104444,
+      "recovered_pct_of_gap": 91.8,
+      "n_routed": 21,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.0985,
+      "fraction_routed": 0.4889,
+      "total_gap": 0.113778,
+      "residual_gap": 0.005556,
+      "recovered": 0.108222,
+      "recovered_pct_of_gap": 95.12,
+      "n_routed": 22,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.1,
+      "fraction_routed": 0.4889,
+      "total_gap": 0.113778,
+      "residual_gap": 0.005556,
+      "recovered": 0.108222,
+      "recovered_pct_of_gap": 95.12,
+      "n_routed": 22,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.0788,
+      "fraction_routed": 0.5333,
+      "total_gap": 0.113778,
+      "residual_gap": 0.005556,
+      "recovered": 0.108222,
+      "recovered_pct_of_gap": 95.12,
+      "n_routed": 24,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.0592,
+      "fraction_routed": 0.5556,
+      "total_gap": 0.113778,
+      "residual_gap": 0.005556,
+      "recovered": 0.108222,
+      "recovered_pct_of_gap": 95.12,
+      "n_routed": 25,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.0395,
+      "fraction_routed": 0.6222,
+      "total_gap": 0.113778,
+      "residual_gap": 0.003556,
+      "recovered": 0.110222,
+      "recovered_pct_of_gap": 96.87,
+      "n_routed": 28,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.0198,
+      "fraction_routed": 0.8444,
+      "total_gap": 0.113778,
+      "residual_gap": 0.000444,
+      "recovered": 0.113333,
+      "recovered_pct_of_gap": 99.61,
+      "n_routed": 38,
+      "n_total": 45
+    },
+    {
+      "threshold": 0.0002,
+      "fraction_routed": 0.9778,
+      "total_gap": 0.113778,
+      "residual_gap": 0.0,
+      "recovered": 0.113778,
+      "recovered_pct_of_gap": 100.0,
+      "n_routed": 44,
+      "n_total": 45
+    }
+  ],
+  "pareto_knee": {
+    "threshold": 0.5702,
+    "fraction_routed": 0.0667,
+    "total_gap": 0.113778,
+    "residual_gap": 0.069778,
+    "recovered": 0.044,
+    "recovered_pct_of_gap": 38.67,
+    "n_routed": 3,
+    "n_total": 45
+  },
+  "operating_points": {
+    "high_band_thr_0p40": {
+      "threshold": 0.4,
+      "fraction_routed": 0.2,
+      "total_gap": 0.113778,
+      "residual_gap": 0.027111,
+      "recovered": 0.086667,
+      "recovered_pct_of_gap": 76.17,
+      "n_routed": 9,
+      "n_total": 45
+    },
+    "mod_high_band_thr_0p10": {
+      "threshold": 0.1,
+      "fraction_routed": 0.4889,
+      "total_gap": 0.113778,
+      "residual_gap": 0.005556,
+      "recovered": 0.108222,
+      "recovered_pct_of_gap": 95.12,
+      "n_routed": 22,
+      "n_total": 45
+    }
+  },
+  "roc_auc_in_sample": {
+    "auc": 0.8445,
+    "n_pos": 17,
+    "n_neg": 28,
+    "status": "ok"
+  }
+}

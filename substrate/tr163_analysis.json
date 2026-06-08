@@ -1,0 +1,128 @@
+{
+  "experiment": "tr163_rtsi_gated_dtype_routing",
+  "run_dir": "C:\\Users\\sahil\\OneDrive\\Documents\\GitHub\\Banterhearts\\research\\tr163\\results\\20260523_011918",
+  "n_cells": 45,
+  "risk_distribution": {
+    "LOW": 23,
+    "MODERATE": 13,
+    "HIGH": 9
+  },
+  "material_loss_cutoff": 0.05,
+  "in_sample": {
+    "roc_auc": {
+      "auc": 0.8445,
+      "n_pos": 17,
+      "n_neg": 28,
+      "status": "ok"
+    },
+    "pareto_knee": {
+      "threshold": 0.5702,
+      "fraction_routed": 0.0667,
+      "total_gap": 0.113778,
+      "residual_gap": 0.069778,
+      "recovered": 0.044,
+      "recovered_pct_of_gap": 38.67,
+      "n_routed": 3,
+      "n_total": 45
+    },
+    "high_band": {
+      "threshold": 0.4,
+      "fraction_routed": 0.2,
+      "total_gap": 0.113778,
+      "residual_gap": 0.027111,
+      "recovered": 0.086667,
+      "recovered_pct_of_gap": 76.17,
+      "n_routed": 9,
+      "n_total": 45
+    },
+    "mod_high_band": {
+      "threshold": 0.1,
+      "fraction_routed": 0.4889,
+      "total_gap": 0.113778,
+      "residual_gap": 0.005556,
+      "recovered": 0.108222,
+      "recovered_pct_of_gap": 95.12,
+      "n_routed": 22,
+      "n_total": 45
+    }
+  },
+  "out_of_sample_loocv": {
+    "roc_auc": {
+      "auc": 0.8445,
+      "n_pos": 17,
+      "n_neg": 28,
+      "status": "ok"
+    },
+    "pareto_knee": {
+      "threshold": 0.4496,
+      "fraction_routed": 0.1111,
+      "total_gap": 0.113778,
+      "residual_gap": 0.045778,
+      "recovered": 0.068,
+      "recovered_pct_of_gap": 59.77,
+      "n_routed": 5,
+      "n_total": 45
+    },
+    "high_band": {
+      "threshold": 0.4,
+      "fraction_routed": 0.2222,
+      "total_gap": 0.113778,
+      "residual_gap": 0.026889,
+      "recovered": 0.086889,
+      "recovered_pct_of_gap": 76.37,
+      "n_routed": 10,
+      "n_total": 45
+    },
+    "mod_high_band": {
+      "threshold": 0.1,
+      "fraction_routed": 0.4889,
+      "total_gap": 0.113778,
+      "residual_gap": 0.005556,
+      "recovered": 0.108222,
+      "recovered_pct_of_gap": 95.12,
+      "n_routed": 22,
+      "n_total": 45
+    },
+    "note": "Routing decisions use leave-one-cell-out RTSI scores (weights refit on the complement). This is the honest generalization claim; the in-sample block is a mechanism demo."
+  },
+  "verdicts": {
+    "h0_no_free_lunch": false,
+    "h1_favorable_tradeoff": true,
+    "h1_supporting_points": [
+      {
+        "threshold": 0.2754,
+        "fraction_routed": 0.2667,
+        "total_gap": 0.113778,
+        "residual_gap": 0.022444,
+        "recovered": 0.091333,
+        "recovered_pct_of_gap": 80.27,
+        "n_routed": 12,
+        "n_total": 45
+      },
+      {
+        "threshold": 0.295,
+        "fraction_routed": 0.2667,
+        "total_gap": 0.113778,
+        "residual_gap": 0.022444,
+        "recovered": 0.091333,
+        "recovered_pct_of_gap": 80.27,
+        "n_routed": 12,
+        "n_total": 45
+      },
+      {
+        "threshold": 0.2557,
+        "fraction_routed": 0.2889,
+        "total_gap": 0.113778,
+        "residual_gap": 0.017556,
+        "recovered": 0.096222,
+        "recovered_pct_of_gap": 84.57,
+        "n_routed": 13,
+        "n_total": 45
+      }
+    ],
+    "h2_usable_operating_curve": true,
+    "h2_loocv_auc": 0.8445,
+    "summary": "H0 no-free-lunch: False; H1 favorable-tradeoff: True; H2 usable-curve (LOOCV AUC 0.8445): True"
+  },
+  "circularity_note": "RTSI was calibrated on this 45-cell matrix. The in_sample block is therefore partly tautological; lead with out_of_sample_loocv."
+}
