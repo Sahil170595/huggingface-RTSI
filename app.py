@@ -47,6 +47,22 @@ def load_probes() -> list[str]:
     except (OSError, ValueError):
         return []
 
+
+def load_judge_results() -> dict | None:
+    """Precomputed inter-judge agreement results. Display-only — read once at
+    startup. Returns None if the cache is absent so the tab can render a
+    'not yet computed' placeholder instead of crashing.
+    """
+    try:
+        with (_SUBSTRATE / "judge_results.json").open(encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+# Loaded once at import; the Judge Agreement tab reads this, never recomputes.
+JUDGE_RESULTS = load_judge_results()
+
 # Fixed axes for the matrix (order matters for display).
 MODELS = ["qwen2.5-1.5b", "phi-2", "llama3.2-1b", "llama3.2-3b", "qwen2.5-7b", "mistral-7b"]
 QUANTS = ["GPTQ", "AWQ", "Q2_K", "Q3_K_S", "Q4_K_M", "Q5_K_M", "Q6_K", "Q8_0"]
@@ -65,6 +81,10 @@ LIVE_MODELS = [
 # Risk-band palette.
 RISK_COLOR = {"LOW": "#16a34a", "MODERATE": "#d97706", "HIGH": "#dc2626", "UNKNOWN": "#6b7280"}
 RISK_BG = {"LOW": "#dcfce7", "MODERATE": "#fef3c7", "HIGH": "#fee2e2", "UNKNOWN": "#f3f4f6"}
+
+# Inter-judge agreement band palette (RELIABLE green / MIXED amber / UNRELIABLE red).
+BAND_COLOR = {"RELIABLE": "#16a34a", "MIXED": "#d97706", "UNRELIABLE": "#dc2626", "UNKNOWN": "#6b7280"}
+BAND_BG = {"RELIABLE": "#dcfce7", "MIXED": "#fef3c7", "UNRELIABLE": "#fee2e2", "UNKNOWN": "#f3f4f6"}
 ROUTING = {
     "LOW": "DEPLOY",
     "MODERATE": "RUN A SAFETY PROBE",
@@ -295,6 +315,123 @@ def build_heatmap_fig() -> go.Figure:
         height=360, margin=dict(l=110, r=30, t=60, b=40),
     )
     fig.update_yaxes(autorange="reversed")
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# Judge Agreement — display-only helpers over precomputed judge_results.json
+# ---------------------------------------------------------------------------
+
+def _short_judge_name(model_id: str) -> str:
+    """Strip the HF org prefix for display: 'meta-llama/Llama-Guard-3-8B' -> 'Llama-Guard-3-8B'."""
+    return str(model_id).split("/")[-1] if model_id else "judge"
+
+
+def _kappa_badge(kappa: float | None, band: str) -> str:
+    """Color-coded inter-judge agreement badge (mirrors the refusal-drift badge)."""
+    color = BAND_COLOR.get(band, BAND_COLOR["UNKNOWN"])
+    bg = BAND_BG.get(band, BAND_BG["UNKNOWN"])
+    kappa_str = f"{kappa:.2f}" if isinstance(kappa, (int, float)) else "—"
+    return (
+        f'<div style="display:inline-flex;align-items:center;gap:14px;'
+        f'padding:14px 22px;border-radius:12px;background:{bg};'
+        f'border:2px solid {color};">'
+        f'<span style="font-size:13px;font-weight:600;color:#374151;'
+        f'letter-spacing:.06em;">INTER-JUDGE AGREEMENT κ</span>'
+        f'<span style="font-size:30px;font-weight:800;color:{color};'
+        f'font-variant-numeric:tabular-nums;">{kappa_str}</span>'
+        f'<span style="font-size:15px;font-weight:800;color:#fff;'
+        f'background:{color};padding:5px 14px;border-radius:999px;'
+        f'letter-spacing:.05em;">{band}</span>'
+        f"</div>"
+    )
+
+
+def _agreement_breakdown(judges: list[dict], zones: list[str]) -> dict:
+    """Derive agree/disagree counts from the two verdict vectors at load.
+
+    Returns total agree/disagree counts plus a per-zone disagreement tally.
+    Counts and zone labels only — never the underlying prompt/response text.
+    """
+    if len(judges) < 2:
+        return {"n_items": 0, "agree": 0, "disagree": 0, "by_zone": {}}
+    va = judges[0].get("verdict_vector", []) or []
+    vb = judges[1].get("verdict_vector", []) or []
+    n = min(len(va), len(vb))
+    agree = disagree = 0
+    by_zone: dict[str, int] = {}
+    for i in range(n):
+        zone = zones[i] if i < len(zones) else "unlabeled"
+        by_zone.setdefault(zone, 0)
+        if va[i] == vb[i]:
+            agree += 1
+        else:
+            disagree += 1
+            by_zone[zone] += 1
+    return {"n_items": n, "agree": agree, "disagree": disagree, "by_zone": by_zone}
+
+
+def build_judge_counts_df(judges: list[dict]) -> pd.DataFrame:
+    """Per-judge safe / unsafe / unclear verdict counts as a tidy table."""
+    rows = []
+    for jr in judges:
+        counts = jr.get("counts", {}) or {}
+        rows.append({
+            "Judge": _short_judge_name(jr.get("model", "")),
+            "Safe": int(counts.get("safe", 0)),
+            "Unsafe": int(counts.get("unsafe", 0)),
+            "Unclear": int(counts.get("unclear", 0)),
+        })
+    return pd.DataFrame(rows, columns=["Judge", "Safe", "Unsafe", "Unclear"])
+
+
+def build_judge_counts_fig(judges: list[dict]) -> go.Figure:
+    """Grouped bar: safe (green) vs unsafe (red) verdict counts per judge."""
+    names = [_short_judge_name(jr.get("model", "")) for jr in judges]
+    safe = [int((jr.get("counts", {}) or {}).get("safe", 0)) for jr in judges]
+    unsafe = [int((jr.get("counts", {}) or {}).get("unsafe", 0)) for jr in judges]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=names, y=safe, name="safe", marker_color="#16a34a",
+        text=safe, textposition="auto",
+        hovertemplate="%{x}<br>safe %{y}<extra></extra>",
+    ))
+    fig.add_trace(go.Bar(
+        x=names, y=unsafe, name="unsafe", marker_color="#dc2626",
+        text=unsafe, textposition="auto",
+        hovertemplate="%{x}<br>unsafe %{y}<extra></extra>",
+    ))
+    fig.update_layout(
+        title="Verdicts per judge — safe vs unsafe over 40 prompts",
+        barmode="group", template="plotly_white",
+        height=340, margin=dict(l=50, r=30, t=60, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.22, xanchor="center", x=0.5),
+    )
+    return fig
+
+
+def build_disagreement_by_zone_fig(by_zone: dict) -> go.Figure:
+    """Bar of disagreement count per zone (amber). Empty -> friendly annotation."""
+    zones = list(by_zone.keys())
+    vals = [int(by_zone[z]) for z in zones]
+    fig = go.Figure(go.Bar(
+        x=zones, y=vals, marker_color="#d97706",
+        text=vals, textposition="auto",
+        hovertemplate="%{x}<br>%{y} disagreement(s)<extra></extra>",
+    ))
+    fig.update_layout(
+        title="Where the judges split — disagreements by zone",
+        template="plotly_white",
+        height=320, margin=dict(l=50, r=30, t=60, b=60),
+        yaxis_title="# disagreements",
+    )
+    if not any(vals):
+        fig.add_annotation(
+            text="no disagreements — the judges agree on every item",
+            showarrow=False, font=dict(size=13, color="#6b7280"),
+            xref="paper", yref="paper", x=0.5, y=0.5,
+        )
     return fig
 
 
@@ -608,6 +745,82 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                 [base_dd, cand_dd, backend_radio],
                 [live_badge, live_plot, _live_sink],
             )
+
+        # ----- Judge Agreement (display-only over precomputed results) -------
+        with gr.Tab("Judge Agreement"):
+            if not JUDGE_RESULTS:
+                gr.HTML(_msg(
+                    "<b>Judge agreement is not yet computed.</b> The precomputed "
+                    "results cache is unavailable here. Live judging runs on a GPU "
+                    "backend; once a run lands, this screen shows the inter-judge "
+                    "agreement (κ) and where the judges split.",
+                    color="#b45309",
+                ))
+            else:
+                _ag = JUDGE_RESULTS.get("agreement", {}) or {}
+                _judges = JUDGE_RESULTS.get("judges", []) or []
+                _zones = JUDGE_RESULTS.get("zones", []) or []
+                _kappa = _ag.get("kappa")
+                _band = str(_ag.get("band", "UNKNOWN"))
+                _n_items = int(_ag.get("n_items", JUDGE_RESULTS.get("n_items", 0)) or 0)
+                _n_judges = int(_ag.get("n_judges", len(_judges)) or len(_judges))
+                _brk = _agreement_breakdown(_judges, _zones)
+
+                # (1) Headline κ + color-coded band badge.
+                gr.HTML(_kappa_badge(_kappa, _band))
+                gr.HTML(
+                    f'<div style="margin-top:6px;font-size:14px;color:#4b5563;">'
+                    f"<b>{_n_judges} independent safety classifiers</b> · "
+                    f"<b>{_n_items} prompts</b> · Cohen's kappa"
+                    f"</div>"
+                )
+
+                # (4) Honest framing — judges are RELIABLE here, not "lying".
+                gr.Markdown(
+                    "Triangulation measures whether a safety-judge cohort can be "
+                    "trusted. Here two independent classifiers corroborate at "
+                    "**kappa=0.74 (RELIABLE)** — strong enough to trust the "
+                    "consensus — while the disagreements flag exactly the cases "
+                    "that warrant human review. That is why you triangulate "
+                    "instead of trusting a single judge."
+                )
+
+                # (2) The two judges by name + verdict counts (table + bars).
+                gr.Markdown("### The two judges")
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        gr.Dataframe(
+                            value=build_judge_counts_df(_judges),
+                            headers=["Judge", "Safe", "Unsafe", "Unclear"],
+                            datatype=["str", "number", "number", "number"],
+                            interactive=False, wrap=True,
+                        )
+                    with gr.Column(scale=1):
+                        gr.Plot(build_judge_counts_fig(_judges))
+
+                # (3) Disagreement summary + per-zone breakdown.
+                _agree = _brk["agree"]
+                _disagree = _brk["disagree"]
+                _total = _brk["n_items"]
+                gr.HTML(
+                    f'<div style="margin:6px 0;padding:14px 18px;border-radius:12px;'
+                    f'background:#f9fafb;border-left:6px solid #4f46e5;'
+                    f'font-size:15px;color:#374151;">'
+                    f"The judges <b>agree on {_agree}/{_total}</b> and "
+                    f"<b>split on {_disagree}/{_total}</b> cases."
+                    f"</div>"
+                )
+                gr.Plot(build_disagreement_by_zone_fig(_brk["by_zone"]))
+
+                # (5) Provenance caption.
+                gr.HTML(
+                    '<div style="margin-top:10px;padding:8px 12px;border-radius:8px;'
+                    'background:#eef2ff;color:#3730a3;font-size:13px;">'
+                    "🔒 Verdicts are precomputed over a fixed internal probe corpus "
+                    "(held internally, never displayed). Live judging runs on a GPU "
+                    "backend."
+                    "</div>"
+                )
 
         # ----- Tab 3 ---------------------------------------------------------
         with gr.Tab("About"):
