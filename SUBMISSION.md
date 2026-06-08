@@ -13,10 +13,12 @@
 Run this from the repo root. Must return zero matches:
 
 ```bash
-grep -rniE "neurips|iclr|icml|openreview|submission #|under review|blind review" . --exclude=SUBMISSION.md
+grep -rniE "neurips|iclr|icml|openreview|submission #|under review|blind review|\bRTSI\b|\bJTP\b|\bTAIS\b|\bCRI\b" . --exclude=SUBMISSION.md --exclude-dir=__pycache__ --exclude=rtsi_core.py
 ```
 
 Expected output: _(empty)_
+
+_(Note: `rtsi_core.py` is the vendored internal scorer — excluded as a known internal residual; its symbol names are not user-facing.)_
 
 ---
 

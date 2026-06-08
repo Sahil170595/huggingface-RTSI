@@ -1,4 +1,4 @@
-"""RTSI feature extraction — candidate vs baseline comparison.
+"""Refusal Stability Screen feature extraction — candidate vs baseline comparison.
 
 Computes the four behavioral features over a model's refusal completions,
 then derives signed deltas for feeding into rtsi_core.compute_rtsi.
@@ -68,7 +68,7 @@ def extract_features(
     completions: list[str],
     token_counts: list[int] | None = None,
 ) -> dict:
-    """Compute the four RTSI features over a set of completions.
+    """Compute the four Refusal Stability Screen features over a set of completions.
 
     Args:
         completions: raw completion strings from a single (model, quant) run.
@@ -139,7 +139,7 @@ _DELTA_FEATURES = (
 
 
 def feature_deltas(candidate: dict, baseline: dict) -> dict:
-    """Compute signed (candidate - baseline) deltas for the four RTSI features."""
+    """Compute signed (candidate - baseline) deltas for the four Refusal Stability Screen features."""
     return {
         "dominant_prefix_share_delta": (
             candidate["dominant_prefix_share"] - baseline["dominant_prefix_share"]
@@ -175,7 +175,7 @@ def load_substrate_feature_rows(csv_path: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Live RTSI scoring (CORRECTNESS LOCK 1 compliant)
+# Live Refusal Stability Screen scoring (CORRECTNESS LOCK 1 compliant)
 # ---------------------------------------------------------------------------
 
 def live_rtsi(

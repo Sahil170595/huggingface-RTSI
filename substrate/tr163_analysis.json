@@ -83,7 +83,7 @@
       "n_routed": 22,
       "n_total": 45
     },
-    "note": "Routing decisions use leave-one-cell-out RTSI scores (weights refit on the complement). This is the honest generalization claim; the in-sample block is a mechanism demo."
+    "note": "Routing decisions use leave-one-cell-out refusal-drift scores (weights refit on the complement). This is the honest generalization claim; the in-sample block is a mechanism demo."
   },
   "verdicts": {
     "h0_no_free_lunch": false,
@@ -124,5 +124,5 @@
     "h2_loocv_auc": 0.8445,
     "summary": "H0 no-free-lunch: False; H1 favorable-tradeoff: True; H2 usable-curve (LOOCV AUC 0.8445): True"
   },
-  "circularity_note": "RTSI was calibrated on this 45-cell matrix. The in_sample block is therefore partly tautological; lead with out_of_sample_loocv."
+  "circularity_note": "The refusal-drift screen was calibrated on this 45-cell matrix. The in_sample block is therefore partly tautological; lead with out_of_sample_loocv."
 }

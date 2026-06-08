@@ -1,4 +1,4 @@
-"""inference.py — backend-swappable text generation for the live RTSI tab.
+"""inference.py — backend-swappable text generation for the live refusal-drift tab.
 
 Three backends:
   "cpu"    transformers AutoModelForCausalLM on CPU (default, no ext deps at import time)

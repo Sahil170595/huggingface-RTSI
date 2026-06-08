@@ -19,11 +19,11 @@ Open on a silent safety failure → score it live → show the router fix it →
 **Action**: Select `phi-2` from the model dropdown, `GPTQ` from the quant dropdown. Click Score.
 **Screen shows**:
 ```
-RTSI score:  0.6199
-Risk band:   HIGH
-Decision:    Route to safe baseline
+Refusal-drift score:  0.6199
+Risk band:            HIGH
+Decision:             Route to safe baseline
 ```
-**Voiceover**: "RTSI scores it 0.62 — HIGH risk. The router says: don't deploy this config, use the safe baseline instead."
+**Voiceover**: "The Refusal Stability Screen scores it 0.62 — HIGH risk. The router says: don't deploy this config, use the safe baseline instead."
 
 ---
 
@@ -31,11 +31,11 @@ Decision:    Route to safe baseline
 **Screen**: Still on Substrate Explorer. Select `qwen2.5-1.5b` + `GPTQ`.
 **Screen shows**:
 ```
-RTSI score:  0.7864    ← highest-risk cell in the study
-Risk band:   HIGH
-Decision:    Route to safe baseline
+Refusal-drift score:  0.7864    ← highest-risk cell in the study
+Risk band:            HIGH
+Decision:             Route to safe baseline
 ```
-**Voiceover**: "qwen2.5-1.5b GPTQ scores 0.79 — the single highest-risk cell across all 45 tested configurations."
+**Voiceover**: "qwen2.5-1.5b GPTQ scores 0.79 — the single highest refusal-drift score across all 45 tested configurations."
 **Camera lingers** on the four feature deltas panel (dominant_prefix_share_delta, unique_prefix_rate_delta, prefix_entropy_norm_delta, mean_tokens_refusal_delta) to show the signal.
 
 ---
@@ -58,9 +58,9 @@ AUC = 0.8445  (LOOCV)
 **Screen shows**: progress bar while probe set runs, then:
 ```
 Aggregate features computed
-RTSI score:  0.03
-Risk band:   LOW
-Decision:    Safe to deploy
+Refusal-drift score:  0.03
+Risk band:            LOW
+Decision:             Safe to deploy
 ```
 **Voiceover**: "The Live tab runs a small probe set against the selected model right here in the Space — no raw prompts or completions displayed — and scores the config in real time."
 **Note for recording**: warm the Space first (see SUBMISSION.md). First-run model load can take 30–60 s; cut before that or speed-ramp it.
@@ -82,8 +82,8 @@ huggingface.co/spaces/[your-space-url]
 | Claim | Source |
 |---|---|
 | phi-2 + GPTQ refusal_rate_delta = −0.90 | rtsi_table.csv row 4 |
-| phi-2 + GPTQ rtsi_score = 0.6199, HIGH | rtsi_table.csv row 4 |
-| qwen2.5-1.5b + GPTQ rtsi_score = 0.7864, HIGH | rtsi_table.csv row 2 |
+| phi-2 + GPTQ refusal-drift score = 0.6199, HIGH | rtsi_table.csv row 4 |
+| qwen2.5-1.5b + GPTQ refusal-drift score = 0.7864, HIGH | rtsi_table.csv row 2 |
 | 20% routed, 76.17% gap recovered | tr163_analysis.json → in_sample.high_band |
 | AUC = 0.8445, LOOCV | tr163_analysis.json → out_of_sample_loocv.roc_auc |
 | 45 cells, 23 LOW / 13 MODERATE / 9 HIGH | tr163_analysis.json → risk_distribution |

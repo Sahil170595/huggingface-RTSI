@@ -1,4 +1,4 @@
-"""Substrate validation tests for RTSI feature engine and scorer."""
+"""Substrate validation tests for the Refusal Stability Screen feature engine and scorer."""
 
 from __future__ import annotations
 
