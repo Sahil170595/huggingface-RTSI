@@ -1361,12 +1361,12 @@ with gr.Blocks(**_blocks_kwargs) as demo:
 
                 # (4) Honest framing — judges are RELIABLE here, not "lying".
                 gr.Markdown(
-                    "Triangulation measures whether a safety-judge cohort can be "
-                    "trusted. Here two independent classifiers corroborate at "
-                    "**kappa=0.74 (RELIABLE)** — strong enough to trust the "
-                    "consensus — while the disagreements flag exactly the cases "
-                    "that warrant human review. That is why you triangulate "
-                    "instead of trusting a single judge."
+                    "Cross-checking independent judges measures whether a "
+                    "safety-judge cohort can be trusted. Here two independent "
+                    "classifiers corroborate at **kappa=0.74 (RELIABLE)** — strong "
+                    "enough to trust the consensus — while the disagreements flag "
+                    "exactly the cases that warrant human review. That is why you "
+                    "cross-check independent judges instead of trusting a single one."
                 )
 
                 # (2) The two judges by name + verdict counts (table + bars).
