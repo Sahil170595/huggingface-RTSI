@@ -51,10 +51,11 @@ All models pass the <=32B constraint. The full pipeline (screen + 2 judges + 3-m
 Run from the repo root. Must return zero matches before submitting:
 
 ```bash
-grep -rniE "neurips|iclr|icml|openreview|submission #|under review|blind review|\bRTSI\b|\bJTP\b|\bTAIS\b|\bCRI\b" . \
-  --exclude=SUBMISSION.md \
+grep -rniE "neurips|iclr|icml|openreview|submission #|under review|blind review" . \
   --exclude=rtsi_core.py \
   --exclude-dir=__pycache__
+# Then run a second pass for the blind method-name acronyms, kept in an
+# internal-only list (deliberately NOT enumerated in this public file).
 ```
 
 Expected output: _(empty)_

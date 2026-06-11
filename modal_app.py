@@ -62,12 +62,14 @@ GPU:
 === END RUNBOOK ===
 """
 
-from __future__ import annotations
-
 import os
 from typing import Any
 
 import modal
+
+# NOTE: do NOT add `from __future__ import annotations` here — it stringizes the
+# class annotations and breaks modal.parameter() type validation (model_id: str
+# would arrive as the string 'str'). Modal needs the eager type object.
 
 # ---------------------------------------------------------------------------
 # Allowlist — reject any model string not in this set to prevent abuse.
@@ -97,10 +99,16 @@ _image = (
         "bitsandbytes>=0.43.0",   # 4-bit quantisation on A10g for 7B models
         "sentencepiece>=0.1.99",
         "protobuf>=4.25.0",       # required by sentencepiece wheels
+        "fastapi[standard]>=0.110.0",  # Modal 1.x web endpoints are FastAPI-backed
     )
 )
 
 app = modal.App("debate-backend", image=_image)
+
+# Persist the HF model cache across cold starts so the 7B weights download ONCE.
+# A fresh container otherwise re-downloads ~28 GB (2x 7B) on every cold start
+# (~3 min cold debate); with the volume, repeat cold-starts are load-only (~20-40 s).
+_hf_cache = modal.Volume.from_name("debate-hf-cache", create_if_missing=True)
 
 # ---------------------------------------------------------------------------
 # GPU inference class — one container per model_id, loaded once at cold-start.
@@ -111,9 +119,10 @@ app = modal.App("debate-backend", image=_image)
 # ---------------------------------------------------------------------------
 
 @app.cls(
-    gpu="a10g",         # 24 GB VRAM; fits Qwen-7B + Mistral-7B in fp16 easily
+    gpu="A10G",         # 24 GB VRAM; fits Qwen-7B + Mistral-7B in fp16 easily
     timeout=300,        # seconds; a single 220-token generation << 60 s on A10g
-    container_idle_timeout=120,  # keep warm between debate rounds (2-min window)
+    scaledown_window=300,  # keep warm ~5 min between debates during a judging session
+    volumes={"/root/.cache/huggingface": _hf_cache},  # persist model downloads across cold starts
 )
 class DebateInferenceServer:
     """Loads one instruct model at container boot; serves single-prompt generation.
@@ -212,7 +221,7 @@ class DebateInferenceServer:
 # ---------------------------------------------------------------------------
 
 @app.function()
-@modal.web_endpoint(method="POST", label="generate")
+@modal.fastapi_endpoint(method="POST", label="generate")
 def generate_endpoint(body: dict[str, Any]) -> dict[str, str]:
     """HTTP POST handler.  Validates the request and delegates to the GPU class.
 
