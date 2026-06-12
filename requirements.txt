@@ -1,4 +1,4 @@
-gradio>=5.0.0
+gradio==5.9.1  # pinned: gradio 6.x has a tab-switch hang with this multi-plot page (only the default tab renders; others freeze on click)
 pandas>=2.0.0
 numpy>=1.24.0
 plotly>=5.18.0
