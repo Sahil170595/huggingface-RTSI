@@ -130,12 +130,12 @@ LIVE_MODELS = [
 ]
 
 # Risk-band palette.
-RISK_COLOR = {"LOW": "#16a34a", "MODERATE": "#d97706", "HIGH": "#dc2626", "UNKNOWN": "#6b7280"}
-RISK_BG = {"LOW": "#dcfce7", "MODERATE": "#fef3c7", "HIGH": "#fee2e2", "UNKNOWN": "#f3f4f6"}
+RISK_COLOR = {"LOW": "#4F6F52", "MODERATE": "#9A7B3A", "HIGH": "#7B2D26", "UNKNOWN": "#6B6660"}
+RISK_BG = {"LOW": "#ECF0EA", "MODERATE": "#F4EEE0", "HIGH": "#F3E7E5", "UNKNOWN": "#F0EDE6"}
 
 # Inter-judge agreement band palette (RELIABLE green / MIXED amber / UNRELIABLE red).
-BAND_COLOR = {"RELIABLE": "#16a34a", "MIXED": "#d97706", "UNRELIABLE": "#dc2626", "UNKNOWN": "#6b7280"}
-BAND_BG = {"RELIABLE": "#dcfce7", "MIXED": "#fef3c7", "UNRELIABLE": "#fee2e2", "UNKNOWN": "#f3f4f6"}
+BAND_COLOR = {"RELIABLE": "#4F6F52", "MIXED": "#9A7B3A", "UNRELIABLE": "#7B2D26", "UNKNOWN": "#6B6660"}
+BAND_BG = {"RELIABLE": "#ECF0EA", "MIXED": "#F4EEE0", "UNRELIABLE": "#F3E7E5", "UNKNOWN": "#F0EDE6"}
 ROUTING = {
     "LOW": "DEPLOY",
     "MODERATE": "RUN A SAFETY PROBE",
@@ -146,13 +146,13 @@ ROUTING = {
 # Certificate verdict from the refusal-stability band: LOW->PASS, MODERATE->REVIEW,
 # HIGH->ROUTE (route to safe baseline). Drives the signed safety attestation.
 VERDICT_FROM_BAND = {"LOW": "PASS", "MODERATE": "REVIEW", "HIGH": "ROUTE"}
-VERDICT_COLOR = {"PASS": "#16a34a", "REVIEW": "#d97706", "ROUTE": "#dc2626", "UNKNOWN": "#6b7280"}
-VERDICT_BG = {"PASS": "#dcfce7", "REVIEW": "#fef3c7", "ROUTE": "#fee2e2", "UNKNOWN": "#f3f4f6"}
+VERDICT_COLOR = {"PASS": "#4F6F52", "REVIEW": "#9A7B3A", "ROUTE": "#7B2D26", "UNKNOWN": "#6B6660"}
+VERDICT_BG = {"PASS": "#ECF0EA", "REVIEW": "#F4EEE0", "ROUTE": "#F3E7E5", "UNKNOWN": "#F0EDE6"}
 
 # Constitutional Debate stance palette (DEPLOY green / ROUTE red / CONDITIONAL amber).
 # Stances are the debate's own vocabulary, distinct from the cert verdict above.
-STANCE_COLOR = {"DEPLOY": "#16a34a", "ROUTE": "#dc2626", "CONDITIONAL": "#d97706", "UNKNOWN": "#6b7280"}
-STANCE_BG = {"DEPLOY": "#dcfce7", "ROUTE": "#fee2e2", "CONDITIONAL": "#fef3c7", "UNKNOWN": "#f3f4f6"}
+STANCE_COLOR = {"DEPLOY": "#4F6F52", "ROUTE": "#7B2D26", "CONDITIONAL": "#9A7B3A", "UNKNOWN": "#6B6660"}
+STANCE_BG = {"DEPLOY": "#ECF0EA", "ROUTE": "#F3E7E5", "CONDITIONAL": "#F4EEE0", "UNKNOWN": "#F0EDE6"}
 
 # Env var that wires the live debate to a Modal GPU backend. While unset, the
 # live button stays disabled and the tab replays a cached example instead.
@@ -181,16 +181,16 @@ def _badge(risk: str, score: float | None) -> str:
     bg = RISK_BG.get(risk, RISK_BG["UNKNOWN"])
     score_str = f"{score:.4f}" if isinstance(score, (int, float)) else "—"
     return (
-        f'<div style="display:inline-flex;align-items:center;gap:14px;'
-        f'padding:14px 22px;border-radius:12px;background:{bg};'
-        f'border:2px solid {color};">'
-        f'<span style="font-size:13px;font-weight:600;color:#374151;'
-        f'letter-spacing:.06em;">REFUSAL-DRIFT</span>'
-        f'<span style="font-size:30px;font-weight:800;color:{color};'
-        f'font-variant-numeric:tabular-nums;">{score_str}</span>'
-        f'<span style="font-size:15px;font-weight:800;color:#fff;'
-        f'background:{color};padding:5px 14px;border-radius:999px;'
-        f'letter-spacing:.05em;">{risk}</span>'
+        f'<div style="display:inline-flex;align-items:center;gap:16px;'
+        f'padding:14px 22px;border-radius:6px;background:{bg};'
+        f'border:1px solid {color};">'
+        f'<span style="font-size:11px;font-weight:600;color:#6B6660;'
+        f'letter-spacing:.14em;text-transform:uppercase;">Refusal-drift</span>'
+        f'<span style="font-family:\'Fraunces\',Georgia,serif;font-size:32px;'
+        f'font-weight:600;color:{color};font-variant-numeric:tabular-nums;">{score_str}</span>'
+        f'<span style="font-size:12px;font-weight:600;color:#FAF9F6;'
+        f'background:{color};padding:5px 13px;border-radius:3px;'
+        f'letter-spacing:.1em;text-transform:uppercase;">{risk}</span>'
         f"</div>"
     )
 
@@ -204,30 +204,30 @@ def _recommendation_card(risk: str, refusal_delta: float | None) -> str:
     else:
         pts = refusal_delta * 100.0
         arrow = "▼" if pts < 0 else ("▲" if pts > 0 else "■")
-        sign_color = "#dc2626" if pts < 0 else "#16a34a" if pts > 0 else "#6b7280"
+        sign_color = "#7B2D26" if pts < 0 else "#4F6F52" if pts > 0 else "#6B6660"
         ref_line = (
-            f'<div style="margin-top:10px;font-size:14px;color:#374151;">'
+            f'<div style="margin-top:10px;font-size:14px;color:#4A453E;">'
             f"refusal change "
             f'<span style="color:{sign_color};font-weight:700;">'
             f"{arrow} {pts:+.0f} pts</span>"
             f"</div>"
         )
     return (
-        f'<div style="margin-top:14px;padding:16px 18px;border-radius:12px;'
-        f'background:#f9fafb;border-left:6px solid {color};">'
-        f'<div style="font-size:12px;color:#6b7280;letter-spacing:.08em;'
-        f'font-weight:600;">ROUTING DECISION</div>'
-        f'<div style="font-size:22px;font-weight:800;color:{color};'
-        f'margin-top:4px;">{decision}</div>'
+        f'<div style="margin-top:14px;padding:16px 20px;border-radius:6px;'
+        f'background:#FBFAF7;border:1px solid #E5E0D8;border-left:3px solid {color};">'
+        f'<div style="font-size:11px;color:#6B6660;letter-spacing:.14em;'
+        f'font-weight:600;text-transform:uppercase;">Routing decision</div>'
+        f'<div style="font-family:\'Fraunces\',Georgia,serif;font-size:23px;'
+        f'font-weight:600;color:{color};margin-top:4px;">{decision}</div>'
         f"{ref_line}"
         f"</div>"
     )
 
 
-def _msg(text: str, color: str = "#6b7280") -> str:
+def _msg(text: str, color: str = "#6B6660") -> str:
     return (
-        f'<div style="padding:18px;border-radius:12px;background:#f9fafb;'
-        f'border:1px dashed #d1d5db;color:{color};font-size:15px;">{text}</div>'
+        f'<div style="padding:18px;border-radius:12px;background:#FBFAF7;'
+        f'border:1px dashed #D8D2C7;color:{color};font-size:15px;">{text}</div>'
     )
 
 
@@ -255,17 +255,17 @@ def _killer_cells_banner() -> str:
             f'<a href="?model={model}&quant={quant}" '
             f'style="flex:1;min-width:240px;text-decoration:none;'
             f'display:block;padding:14px 16px;border-radius:12px;'
-            f'background:#fff;border:2px solid #dc2626;">'
-            f'<div style="font-size:15px;font-weight:800;color:#991b1b;">{title}</div>'
-            f'<div style="font-size:13px;color:#374151;margin-top:3px;">{sub}</div>'
-            f'<div style="font-size:12px;color:#dc2626;font-weight:700;'
+            f'background:#fff;border:2px solid #7B2D26;">'
+            f'<div style="font-size:15px;font-weight:800;color:#5C211C;">{title}</div>'
+            f'<div style="font-size:13px;color:#4A453E;margin-top:3px;">{sub}</div>'
+            f'<div style="font-size:12px;color:#7B2D26;font-weight:700;'
             f'margin-top:6px;">click to score →</div>'
             f"</a>"
         )
 
     return (
         '<div style="margin:6px 0 14px;">'
-        '<div style="font-size:13px;font-weight:700;color:#991b1b;'
+        '<div style="font-size:13px;font-weight:700;color:#5C211C;'
         'letter-spacing:.04em;margin-bottom:8px;">⚠️ TWO CELLS THAT SILENTLY '
         'BREAK SAFETY</div>'
         '<div style="display:flex;gap:12px;flex-wrap:wrap;">'
@@ -288,6 +288,26 @@ def _killer_cells_banner() -> str:
 # Plotly: Pareto frontier + risk heatmap
 # ---------------------------------------------------------------------------
 
+# Editorial chart chrome: transparent ground (sits on ivory), serif title,
+# grotesque body, warm-gray gridlines. One call keeps every figure consistent.
+_PLOT_BODY_FONT = "Hanken Grotesk, ui-sans-serif, sans-serif"
+_PLOT_TITLE_FONT = "Fraunces, Georgia, serif"
+
+
+def _editorial_layout(fig: go.Figure, height: int) -> go.Figure:
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family=_PLOT_BODY_FONT, color="#3F3A34", size=13),
+        title=dict(font=dict(family=_PLOT_TITLE_FONT, color="#1A1A1A", size=17), x=0.0, xanchor="left"),
+        height=height,
+        colorway=["#7B2D26", "#4F6F52", "#9A7B3A", "#3F3A34"],
+    )
+    fig.update_xaxes(gridcolor="#ECE7DD", zerolinecolor="#E5E0D8", linecolor="#E5E0D8")
+    fig.update_yaxes(gridcolor="#ECE7DD", zerolinecolor="#E5E0D8", linecolor="#E5E0D8")
+    return fig
+
+
 def build_pareto_fig() -> go.Figure:
     pts = SIM["pareto_points"]
     xs = [p["fraction_routed"] * 100.0 for p in pts]
@@ -297,8 +317,8 @@ def build_pareto_fig() -> go.Figure:
     fig.add_trace(
         go.Scatter(
             x=xs, y=ys, mode="lines+markers",
-            line=dict(color="#4f46e5", width=2.5),
-            marker=dict(size=6, color="#4f46e5"),
+            line=dict(color="#7B2D26", width=2.5),
+            marker=dict(size=6, color="#7B2D26"),
             name="Pareto frontier",
             hovertemplate="%{x:.1f}% routed<br>%{y:.1f}% gap recovered<extra></extra>",
         )
@@ -307,7 +327,7 @@ def build_pareto_fig() -> go.Figure:
     fig.add_trace(
         go.Scatter(
             x=[OP_ROUTED_PCT], y=[OP_RECOVERED_PCT], mode="markers",
-            marker=dict(size=18, color="#dc2626", symbol="star",
+            marker=dict(size=18, color="#7B2D26", symbol="star",
                         line=dict(color="#fff", width=1.5)),
             name="HIGH-band operating point",
             hovertemplate="Route the 9 HIGH cells<br>%{x:.0f}% routed<br>"
@@ -320,19 +340,19 @@ def build_pareto_fig() -> go.Figure:
             f"<b>route 20% of configs → recover 76.17% of the gap</b><br>"
             f"<span style='font-size:11px'>9 HIGH cells · AUC {LOOCV_AUC}</span>"
         ),
-        showarrow=True, arrowhead=2, arrowcolor="#dc2626",
-        ax=70, ay=45, font=dict(size=13, color="#dc2626"),
-        bgcolor="rgba(255,255,255,0.9)", bordercolor="#dc2626", borderpad=5,
+        showarrow=True, arrowhead=2, arrowcolor="#7B2D26",
+        ax=70, ay=45, font=dict(size=12, color="#7B2D26", family=_PLOT_BODY_FONT),
+        bgcolor="rgba(250,249,246,0.94)", bordercolor="#7B2D26", borderpad=5,
     )
     fig.update_layout(
         title="Route 20% of configs, recover 76% of the refusal-rate gap",
         xaxis_title="% of cells routed to safe baseline",
         yaxis_title="% of refusal-rate gap recovered",
-        template="plotly_white",
-        height=420, margin=dict(l=60, r=30, t=60, b=50),
+        margin=dict(l=60, r=30, t=64, b=50),
         legend=dict(orientation="h", yanchor="bottom", y=-0.28, xanchor="center", x=0.5),
         hovermode="closest",
     )
+    _editorial_layout(fig, 420)
     fig.update_xaxes(range=[-2, 102])
     fig.update_yaxes(range=[0, 105])
     return fig
@@ -362,25 +382,26 @@ def build_heatmap_fig() -> go.Figure:
 
     # Discrete 3-band colorscale (green / amber / red).
     colorscale = [
-        [0.0, "#16a34a"], [0.33, "#16a34a"],
-        [0.33, "#d97706"], [0.66, "#d97706"],
-        [0.66, "#dc2626"], [1.0, "#dc2626"],
+        [0.0, "#4F6F52"], [0.33, "#4F6F52"],
+        [0.33, "#9A7B3A"], [0.66, "#9A7B3A"],
+        [0.66, "#7B2D26"], [1.0, "#7B2D26"],
     ]
     fig = go.Figure(
         go.Heatmap(
             z=z, x=QUANTS, y=MODELS, text=text, texttemplate="%{text}",
-            textfont=dict(size=11, color="#fff"),
+            textfont=dict(size=11, color="#FAF9F6", family=_PLOT_BODY_FONT),
             colorscale=colorscale, zmin=0, zmax=2, showscale=False,
-            xgap=3, ygap=3, hoverongaps=False,
+            xgap=4, ygap=4, hoverongaps=False,
             hovertemplate="%{y} · %{x}<br>refusal-drift %{text}<extra></extra>",
         )
     )
     fig.update_layout(
-        title="45-cell refusal-drift matrix — green LOW · amber MODERATE · red HIGH (blank = not measured)",
-        template="plotly_white",
-        height=360, margin=dict(l=110, r=30, t=60, b=40),
+        title="45-cell refusal-drift matrix — sage LOW · ochre MODERATE · oxblood HIGH (blank = not measured)",
+        margin=dict(l=110, r=30, t=64, b=40),
     )
-    fig.update_yaxes(autorange="reversed")
+    _editorial_layout(fig, 360)
+    fig.update_xaxes(showgrid=False)
+    fig.update_yaxes(autorange="reversed", showgrid=False)
     return fig
 
 
@@ -399,16 +420,16 @@ def _kappa_badge(kappa: float | None, band: str) -> str:
     bg = BAND_BG.get(band, BAND_BG["UNKNOWN"])
     kappa_str = f"{kappa:.2f}" if isinstance(kappa, (int, float)) else "—"
     return (
-        f'<div style="display:inline-flex;align-items:center;gap:14px;'
-        f'padding:14px 22px;border-radius:12px;background:{bg};'
-        f'border:2px solid {color};">'
-        f'<span style="font-size:13px;font-weight:600;color:#374151;'
-        f'letter-spacing:.06em;">INTER-JUDGE AGREEMENT κ</span>'
-        f'<span style="font-size:30px;font-weight:800;color:{color};'
-        f'font-variant-numeric:tabular-nums;">{kappa_str}</span>'
-        f'<span style="font-size:15px;font-weight:800;color:#fff;'
-        f'background:{color};padding:5px 14px;border-radius:999px;'
-        f'letter-spacing:.05em;">{band}</span>'
+        f'<div style="display:inline-flex;align-items:center;gap:16px;'
+        f'padding:14px 22px;border-radius:6px;background:{bg};'
+        f'border:1px solid {color};">'
+        f'<span style="font-size:11px;font-weight:600;color:#6B6660;'
+        f'letter-spacing:.14em;text-transform:uppercase;">Inter-judge agreement &kappa;</span>'
+        f'<span style="font-family:\'Fraunces\',Georgia,serif;font-size:32px;'
+        f'font-weight:600;color:{color};font-variant-numeric:tabular-nums;">{kappa_str}</span>'
+        f'<span style="font-size:12px;font-weight:600;color:#FAF9F6;'
+        f'background:{color};padding:5px 13px;border-radius:3px;'
+        f'letter-spacing:.1em;text-transform:uppercase;">{band}</span>'
         f"</div>"
     )
 
@@ -459,21 +480,22 @@ def build_judge_counts_fig(judges: list[dict]) -> go.Figure:
 
     fig = go.Figure()
     fig.add_trace(go.Bar(
-        x=names, y=safe, name="safe", marker_color="#16a34a",
+        x=names, y=safe, name="safe", marker_color="#4F6F52",
         text=safe, textposition="auto",
         hovertemplate="%{x}<br>safe %{y}<extra></extra>",
     ))
     fig.add_trace(go.Bar(
-        x=names, y=unsafe, name="unsafe", marker_color="#dc2626",
+        x=names, y=unsafe, name="unsafe", marker_color="#7B2D26",
         text=unsafe, textposition="auto",
         hovertemplate="%{x}<br>unsafe %{y}<extra></extra>",
     ))
     fig.update_layout(
         title="Verdicts per judge — safe vs unsafe over 40 prompts",
-        barmode="group", template="plotly_white",
-        height=340, margin=dict(l=50, r=30, t=60, b=40),
+        barmode="group",
+        margin=dict(l=50, r=30, t=64, b=40),
         legend=dict(orientation="h", yanchor="bottom", y=-0.22, xanchor="center", x=0.5),
     )
+    _editorial_layout(fig, 340)
     return fig
 
 
@@ -482,20 +504,20 @@ def build_disagreement_by_zone_fig(by_zone: dict) -> go.Figure:
     zones = list(by_zone.keys())
     vals = [int(by_zone[z]) for z in zones]
     fig = go.Figure(go.Bar(
-        x=zones, y=vals, marker_color="#d97706",
+        x=zones, y=vals, marker_color="#9A7B3A",
         text=vals, textposition="auto",
         hovertemplate="%{x}<br>%{y} disagreement(s)<extra></extra>",
     ))
     fig.update_layout(
         title="Where the judges split — disagreements by zone",
-        template="plotly_white",
-        height=320, margin=dict(l=50, r=30, t=60, b=60),
+        margin=dict(l=50, r=30, t=64, b=60),
         yaxis_title="# disagreements",
     )
+    _editorial_layout(fig, 320)
     if not any(vals):
         fig.add_annotation(
             text="no disagreements — the judges agree on every item",
-            showarrow=False, font=dict(size=13, color="#6b7280"),
+            showarrow=False, font=dict(size=13, color="#6B6660"),
             xref="paper", yref="paper", x=0.5, y=0.5,
         )
     return fig
@@ -532,17 +554,17 @@ def _verdict_banner(verdict: str, pubkey_hex: str, config: dict) -> str:
         f'<div style="margin-top:6px;padding:16px 20px;border-radius:12px;'
         f'background:{bg};border:2px solid {color};">'
         f'<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">'
-        f'<span style="font-size:13px;font-weight:600;color:#374151;'
+        f'<span style="font-size:13px;font-weight:600;color:#4A453E;'
         f'letter-spacing:.06em;">SIGNED VERDICT</span>'
         f'<span style="font-size:26px;font-weight:800;color:#fff;'
         f'background:{color};padding:5px 18px;border-radius:999px;'
         f'letter-spacing:.05em;">{verdict}</span>'
-        f'<span style="font-size:14px;font-weight:700;color:#374151;">'
+        f'<span style="font-size:14px;font-weight:700;color:#4A453E;">'
         f"{model} · {quant}</span>"
         f"</div>"
-        f'<div style="margin-top:10px;font-size:12px;color:#6b7280;'
+        f'<div style="margin-top:10px;font-size:12px;color:#6B6660;'
         f'letter-spacing:.03em;">PUBLIC KEY (Ed25519)</div>'
-        f'<code style="font-size:12px;color:#312e81;word-break:break-all;'
+        f'<code style="font-size:12px;color:#7B2D26;word-break:break-all;'
         f'font-variant-numeric:tabular-nums;">{pubkey_hex}</code>'
         f"</div>"
     )
@@ -551,11 +573,11 @@ def _verdict_banner(verdict: str, pubkey_hex: str, config: dict) -> str:
 def _verify_banner(valid: bool, detail: str = "") -> str:
     """Big ✓ VALID (green) / ✗ INVALID (red) signature-verification result."""
     if valid:
-        color, bg, mark, word = "#16a34a", "#dcfce7", "✓", "VALID"
+        color, bg, mark, word = "#4F6F52", "#ECF0EA", "✓", "VALID"
     else:
-        color, bg, mark, word = "#dc2626", "#fee2e2", "✗", "INVALID"
+        color, bg, mark, word = "#7B2D26", "#F3E7E5", "✗", "INVALID"
     detail_line = (
-        f'<div style="margin-top:8px;font-size:14px;color:#374151;">{detail}</div>'
+        f'<div style="margin-top:8px;font-size:14px;color:#4A453E;">{detail}</div>'
         if detail else ""
     )
     return (
@@ -712,17 +734,17 @@ def _debate_response_card(model: str, stance: str, text: str) -> str:
     model_name = html.escape(str(model or "model"))
     body = _safe_text(text)
     arg = (
-        f'<div style="margin-top:8px;font-size:14px;color:#374151;'
+        f'<div style="margin-top:8px;font-size:14px;color:#4A453E;'
         f'line-height:1.5;white-space:pre-wrap;">{body}</div>'
         if body
-        else '<div style="margin-top:8px;font-size:13px;color:#9ca3af;'
+        else '<div style="margin-top:8px;font-size:13px;color:#9A938A;'
              'font-style:italic;">(no argument text)</div>'
     )
     return (
         f'<div style="margin-top:10px;padding:12px 14px;border-radius:10px;'
-        f'background:#fff;border:1px solid #e5e7eb;border-left:5px solid {color};">'
+        f'background:#fff;border:1px solid #E5E0D8;border-left:5px solid {color};">'
         f'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
-        f'<span style="font-size:14px;font-weight:700;color:#1f2937;'
+        f'<span style="font-size:14px;font-weight:700;color:#1A1A1A;'
         f'font-variant-numeric:tabular-nums;">{model_name}</span>'
         f"{_stance_badge(norm)}"
         f"</div>{arg}</div>"
@@ -743,12 +765,12 @@ def _debate_round_card(rnd: dict) -> str:
         cards = _msg("No responses recorded for this round.")
     return (
         f'<div style="margin:14px 0;padding:14px 16px;border-radius:12px;'
-        f'background:#f9fafb;border:1px solid #e5e7eb;">'
+        f'background:#FBFAF7;border:1px solid #E5E0D8;">'
         f'<div style="display:flex;align-items:center;gap:10px;">'
         f'<span style="font-size:12px;font-weight:800;color:#fff;'
-        f'background:#4f46e5;padding:3px 12px;border-radius:999px;'
+        f'background:#7B2D26;padding:3px 12px;border-radius:999px;'
         f'letter-spacing:.05em;">ROUND {rnum}</span>'
-        f'<span style="font-size:13px;font-weight:700;color:#4338ca;'
+        f'<span style="font-size:13px;font-weight:700;color:#7B2D26;'
         f'letter-spacing:.04em;">{rtype}</span>'
         f"</div>{cards}</div>"
     )
@@ -787,7 +809,7 @@ def _debate_consensus_card(consensus: dict, elapsed_s: float | None = None) -> s
     agreement = max(0.0, min(1.0, agreement))
     pct = agreement * 100.0
     elapsed_line = (
-        f'<span style="font-size:13px;color:#6b7280;">· {float(elapsed_s):.1f}s</span>'
+        f'<span style="font-size:13px;color:#6B6660;">· {float(elapsed_s):.1f}s</span>'
         if isinstance(elapsed_s, (int, float))
         else ""
     )
@@ -795,12 +817,12 @@ def _debate_consensus_card(consensus: dict, elapsed_s: float | None = None) -> s
         f'<div style="margin-top:18px;padding:18px 20px;border-radius:12px;'
         f'background:{bg};border:2px solid {color};">'
         f'<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">'
-        f'<span style="font-size:13px;font-weight:600;color:#374151;'
+        f'<span style="font-size:13px;font-weight:600;color:#4A453E;'
         f'letter-spacing:.06em;">CONSENSUS VERDICT</span>'
         f'<span style="font-size:24px;font-weight:800;color:#fff;'
         f'background:{color};padding:5px 18px;border-radius:999px;'
         f'letter-spacing:.05em;">{verdict}</span>'
-        f'<span style="font-size:15px;font-weight:700;color:#374151;'
+        f'<span style="font-size:15px;font-weight:700;color:#4A453E;'
         f'font-variant-numeric:tabular-nums;">{pct:.0f}% agreement</span>'
         f"{elapsed_line}"
         f"</div>"
@@ -820,18 +842,18 @@ def _debate_question_header(result: dict) -> str:
     models = result.get("models", []) or []
     model_str = html.escape(" · ".join(str(m) for m in models)) if models else "—"
     q_line = (
-        f'<div style="font-size:16px;font-weight:700;color:#1f2937;'
+        f'<div style="font-size:16px;font-weight:700;color:#1A1A1A;'
         f'line-height:1.4;">{question}</div>'
         if question
         else ""
     )
     return (
-        f'<div style="padding:14px 16px;border-radius:12px;background:#eef2ff;'
-        f'border:1px solid #c7d2fe;">'
-        f'<div style="font-size:12px;font-weight:700;color:#4338ca;'
+        f'<div style="padding:14px 16px;border-radius:12px;background:#F3EFE9;'
+        f'border:1px solid #E5E0D8;">'
+        f'<div style="font-size:12px;font-weight:700;color:#7B2D26;'
         f'letter-spacing:.06em;margin-bottom:6px;">CONTESTED QUESTION</div>'
         f"{q_line}"
-        f'<div style="margin-top:8px;font-size:13px;color:#4b5563;">'
+        f'<div style="margin-top:8px;font-size:13px;color:#4A453E;">'
         f"backend <b>{backend}</b> · {model_str}"
         f"</div></div>"
     )
@@ -871,7 +893,7 @@ def _debate_disabled_note() -> str:
     """The note shown beside the disabled 'Run live debate' button."""
     return (
         '<div style="margin-top:8px;padding:12px 16px;border-radius:10px;'
-        'background:#fef3c7;border:1px solid #fcd34d;color:#92400e;'
+        'background:#F4EEE0;border:1px solid #D8C28A;color:#6E5320;'
         'font-size:14px;line-height:1.5;">'
         "⏳ <b>Live debate runs on a Modal GPU backend — pending Modal credit "
         "approval.</b> The engine and adapter are built and tested; this goes "
@@ -920,7 +942,7 @@ def run_live_debate(question: str):
             f"Live debate needs the debate engine and its deps "
             f"(<code>torch</code> + <code>transformers</code>): {exc}. The "
             f"cached example above renders without them.",
-            color="#b91c1c",
+            color="#7B2D26",
         )
         return
 
@@ -930,7 +952,7 @@ def run_live_debate(question: str):
     yield _msg(
         "Opening a live debate on the Modal GPU backend… "
         "(models argue over rounds; this can take a moment).",
-        color="#4338ca",
+        color="#7B2D26",
     )
 
     events: "queue.Queue[dict | None]" = queue.Queue()
@@ -993,7 +1015,7 @@ def run_live_debate(question: str):
         yield header + _msg(
             f"Live debate failed: {box['error']}. The cached example above "
             f"still renders the engine's output.",
-            color="#b91c1c",
+            color="#7B2D26",
         )
         return
 
@@ -1010,10 +1032,10 @@ def _round_wrapper(rnum: int, cards: list[str]) -> str:
     inner = "".join(cards) if cards else _msg("Waiting for responses…")
     return (
         f'<div style="margin:14px 0;padding:14px 16px;border-radius:12px;'
-        f'background:#f9fafb;border:1px solid #e5e7eb;">'
+        f'background:#FBFAF7;border:1px solid #E5E0D8;">'
         f'<div style="display:flex;align-items:center;gap:10px;">'
         f'<span style="font-size:12px;font-weight:800;color:#fff;'
-        f'background:#4f46e5;padding:3px 12px;border-radius:999px;'
+        f'background:#7B2D26;padding:3px 12px;border-radius:999px;'
         f'letter-spacing:.05em;">ROUND {rnum}</span>'
         f"</div>{inner}</div>"
     )
@@ -1052,19 +1074,20 @@ def score_config(model: str, quant: str):
 def _empty_delta_fig() -> go.Figure:
     fig = go.Figure()
     fig.update_layout(
-        template="plotly_white", height=320,
         margin=dict(l=60, r=30, t=40, b=40),
         annotations=[dict(text="Run a live screen to see feature deltas",
-                          showarrow=False, font=dict(size=14, color="#9ca3af"))],
+                          showarrow=False,
+                          font=dict(size=14, color="#9A938A", family=_PLOT_BODY_FONT))],
         xaxis=dict(visible=False), yaxis=dict(visible=False),
     )
+    _editorial_layout(fig, 320)
     return fig
 
 
 def build_delta_fig(deltas: dict) -> go.Figure:
     labels = [FEATURE_LABELS[k] for k in FEATURE_LABELS]
     vals = [float(deltas.get(k, 0.0)) for k in FEATURE_LABELS]
-    colors = ["#dc2626" if v < 0 else "#4f46e5" for v in vals]
+    colors = ["#7B2D26" if v < 0 else "#3F3A34" for v in vals]
     fig = go.Figure(
         go.Bar(
             x=vals, y=labels, orientation="h",
@@ -1075,11 +1098,11 @@ def build_delta_fig(deltas: dict) -> go.Figure:
     )
     fig.update_layout(
         title="Candidate − baseline feature deltas",
-        template="plotly_white", height=320,
-        margin=dict(l=150, r=40, t=50, b=40),
+        margin=dict(l=150, r=40, t=54, b=40),
         xaxis_title="signed delta",
     )
-    fig.add_vline(x=0, line_width=1, line_color="#9ca3af")
+    _editorial_layout(fig, 320)
+    fig.add_vline(x=0, line_width=1, line_color="#9A938A")
     return fig
 
 
@@ -1096,13 +1119,13 @@ def run_live(baseline_model: str, candidate_model: str, backend: str):
 
     probes = load_probes()
     if not probes:
-        yield _msg("Internal probe set is unavailable.", color="#b91c1c"), _empty_delta_fig(), ""
+        yield _msg("Internal probe set is unavailable.", color="#7B2D26"), _empty_delta_fig(), ""
         return
 
     n = len(probes)
     yield (
         _msg(f"Scoring {n} prompts live on <b>{backend}</b>… "
-             f"(cold model load can take 30–60 s)", color="#4338ca"),
+             f"(cold model load can take 30–60 s)", color="#7B2D26"),
         _empty_delta_fig(),
         "",
     )
@@ -1113,7 +1136,7 @@ def run_live(baseline_model: str, candidate_model: str, backend: str):
         yield (
             _msg("Live screening needs <code>torch</code> + <code>transformers</code>, "
                  "which aren't available here. The static <b>Score a config</b> tab works "
-                 "without them.", color="#b91c1c"),
+                 "without them.", color="#7B2D26"),
             _empty_delta_fig(), "",
         )
         return
@@ -1124,7 +1147,7 @@ def run_live(baseline_model: str, candidate_model: str, backend: str):
     except ImportError as exc:
         yield (
             _msg(f"Backend <b>{backend}</b> is missing a dependency: {exc}. "
-                 f"Try the default <b>cpu</b> backend.", color="#b91c1c"),
+                 f"Try the default <b>cpu</b> backend.", color="#7B2D26"),
             _empty_delta_fig(), "",
         )
         return
@@ -1132,7 +1155,7 @@ def run_live(baseline_model: str, candidate_model: str, backend: str):
         yield (
             _msg(f"Live run failed: {type(exc).__name__}: {exc}. "
                  f"Smaller models or the <b>cpu</b> backend are the safest path.",
-                 color="#b91c1c"),
+                 color="#7B2D26"),
             _empty_delta_fig(), "",
         )
         return
@@ -1146,7 +1169,7 @@ def run_live(baseline_model: str, candidate_model: str, backend: str):
     deltas = result["deltas"]
 
     summary = (
-        f'<div style="margin-top:10px;font-size:13px;color:#6b7280;">'
+        f'<div style="margin-top:10px;font-size:13px;color:#6B6660;">'
         f"screened <b>{n}</b> internal probes · "
         f"baseline refusals "
         f"<b>{result['baseline_features']['n_refusals']}/{n}</b> · "
@@ -1251,25 +1274,124 @@ Refusal Stability Screen is the cheap pre-flight check that flags those cells
 actually needed.
 """
 
-theme = gr.themes.Soft(primary_hue="indigo", secondary_hue="red")
+# Editorial / quiet-luxury theme: warm ivory ground, ink text, a single
+# restrained oxblood accent. Serif display (Fraunces) over a clean grotesque
+# body (Hanken Grotesk); mono in Spline Sans Mono. No loud reds — risk is
+# carried by muted sage/ochre/oxblood bands, not alarm fills.
+_FONT_BODY = gr.themes.GoogleFont("Hanken Grotesk")
+_FONT_MONO = gr.themes.GoogleFont("Spline Sans Mono")
 
-# theme moved from Blocks() (gradio 5.x) to launch() (gradio 6.x). Pass it to
-# whichever the installed version accepts so the theme renders on both.
-import inspect as _inspect
+theme = gr.themes.Base(
+    font=[_FONT_BODY, "ui-sans-serif", "system-ui", "sans-serif"],
+    font_mono=[_FONT_MONO, "ui-monospace", "monospace"],
+).set(
+    body_background_fill="#FAF9F6",
+    body_background_fill_dark="#FAF9F6",
+    body_text_color="#1A1A1A",
+    body_text_color_subdued="#6B6660",
+    background_fill_primary="#FFFFFF",
+    background_fill_secondary="#F4F1EA",
+    border_color_primary="#E5E0D8",
+    block_background_fill="#FFFFFF",
+    block_border_color="#E5E0D8",
+    block_label_text_color="#6B6660",
+    block_title_text_color="#1A1A1A",
+    panel_background_fill="#FBFAF7",
+    panel_border_color="#E5E0D8",
+    button_primary_background_fill="#7B2D26",
+    button_primary_background_fill_hover="#651F19",
+    button_primary_text_color="#FAF9F6",
+    button_primary_border_color="#7B2D26",
+    button_secondary_background_fill="#FFFFFF",
+    button_secondary_background_fill_hover="#F4F1EA",
+    button_secondary_border_color="#D8D2C7",
+    button_secondary_text_color="#1A1A1A",
+    color_accent_soft="#F3E7E5",
+    input_background_fill="#FFFFFF",
+    input_border_color="#D8D2C7",
+    input_border_color_focus="#7B2D26",
+    slider_color="#7B2D26",
+    table_border_color="#E5E0D8",
+    table_even_background_fill="#FFFFFF",
+    table_odd_background_fill="#FAF9F6",
+)
 
-_BLOCKS_TAKES_THEME = "theme" in _inspect.signature(gr.Blocks.__init__).parameters
-_blocks_kwargs = {"title": "QuantSafe — will this quant jailbreak your model?"}
-if _BLOCKS_TAKES_THEME:
-    _blocks_kwargs["theme"] = theme
+# Type, tab bar, and ground tuning the theme tokens can't reach. Fonts loaded
+# via @import so Fraunces (display) is available to inline-styled HTML + plotly.
+_EDITORIAL_CSS = """
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Hanken+Grotesk:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500&display=swap');
 
-with gr.Blocks(**_blocks_kwargs) as demo:
+.gradio-container, .gradio-container .prose { background:#FAF9F6 !important; }
+
+/* Serif display for the header + every markdown heading. */
+.qs-header-title,
+.gradio-container h1, .gradio-container h2, .gradio-container h3,
+.gradio-container .prose h1, .gradio-container .prose h2, .gradio-container .prose h3 {
+  font-family:'Fraunces', Georgia, 'Times New Roman', serif !important;
+  font-weight:600 !important;
+  letter-spacing:-0.015em;
+  color:#1A1A1A;
+}
+
+/* Tab bar: quiet underline-active, no filled indigo pills. */
+.gradio-container .tab-nav, .gradio-container div[role="tablist"] {
+  border-bottom:1px solid #E5E0D8 !important;
+  gap:2px;
+}
+.gradio-container .tab-nav button, .gradio-container button[role="tab"] {
+  font-family:'Hanken Grotesk', sans-serif !important;
+  font-weight:600 !important;
+  font-size:14px !important;
+  letter-spacing:0.01em;
+  color:#6B6660 !important;
+  background:transparent !important;
+  border:none !important;
+  border-bottom:2px solid transparent !important;
+  border-radius:0 !important;
+  padding:10px 16px !important;
+}
+.gradio-container .tab-nav button:hover, .gradio-container button[role="tab"]:hover {
+  color:#1A1A1A !important;
+}
+.gradio-container .tab-nav button.selected,
+.gradio-container button[role="tab"][aria-selected="true"] {
+  color:#7B2D26 !important;
+  border-bottom:2px solid #7B2D26 !important;
+  background:transparent !important;
+}
+
+/* Primary button: squared, letter-spaced — editorial, not pill-y. */
+.gradio-container button.primary, .gradio-container .primary {
+  border-radius:3px !important;
+  font-family:'Hanken Grotesk', sans-serif !important;
+  font-weight:600 !important;
+  letter-spacing:0.03em !important;
+}
+
+/* Body copy in the clean grotesque; mono numerals stay tabular. */
+.gradio-container .prose p, .gradio-container .prose li {
+  font-family:'Hanken Grotesk', sans-serif !important;
+  color:#2A2722;
+}
+"""
+
+with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
+               title="QuantSafe — will this quant jailbreak your model?") as demo:
     gr.HTML(
-        '<div style="text-align:center;padding:8px 0 2px;">'
-        '<div style="font-size:30px;font-weight:800;color:#312e81;">'
-        '🛡️ QuantSafe '
-        '<span style="font-weight:600;color:#4f46e5;">— will this quant jailbreak your model?</span>'
-        "</div>"
-        f'<div style="font-size:15px;color:#4b5563;max-width:820px;margin:8px auto 0;">{_PITCH}</div>'
+        '<div style="text-align:center;padding:22px 0 6px;">'
+        '<div style="font-family:\'Hanken Grotesk\',sans-serif;font-size:12px;'
+        'font-weight:600;letter-spacing:.24em;text-transform:uppercase;'
+        'color:#7B2D26;">Quantization Safety Screen</div>'
+        '<div class="qs-header-title" style="font-family:\'Fraunces\',Georgia,serif;'
+        'font-size:44px;font-weight:600;color:#1A1A1A;line-height:1.05;'
+        'letter-spacing:-.02em;margin:6px 0 0;">QuantSafe</div>'
+        '<div style="font-family:\'Fraunces\',Georgia,serif;font-style:italic;'
+        'font-weight:400;font-size:20px;color:#7B2D26;margin-top:3px;">'
+        'will this quant jailbreak your model?</div>'
+        '<div style="width:56px;height:1px;background:#C9A24B;'
+        'margin:16px auto 14px;"></div>'
+        f'<div style="font-family:\'Hanken Grotesk\',sans-serif;font-size:15px;'
+        f'color:#4A453E;max-width:740px;margin:0 auto;line-height:1.62;">{_PITCH}</div>'
         "</div>"
     )
 
@@ -1304,8 +1426,8 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                 "feature deltas — nothing else."
             )
             gr.HTML(
-                '<div style="padding:8px 12px;border-radius:8px;background:#eef2ff;'
-                'color:#3730a3;font-size:13px;margin-bottom:8px;">'
+                '<div style="padding:8px 12px;border-radius:8px;background:#F3EFE9;'
+                'color:#5C211C;font-size:13px;margin-bottom:8px;">'
                 "🔒 Probe prompts are held internally and never displayed "
                 "(safety policy). Only aggregate features and the score are shown."
                 "</div>"
@@ -1353,7 +1475,7 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                 # (1) Headline κ + color-coded band badge.
                 gr.HTML(_kappa_badge(_kappa, _band))
                 gr.HTML(
-                    f'<div style="margin-top:6px;font-size:14px;color:#4b5563;">'
+                    f'<div style="margin-top:6px;font-size:14px;color:#4A453E;">'
                     f"<b>{_n_judges} independent safety classifiers</b> · "
                     f"<b>{_n_items} prompts</b> · Cohen's kappa"
                     f"</div>"
@@ -1388,8 +1510,8 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                 _total = _brk["n_items"]
                 gr.HTML(
                     f'<div style="margin:6px 0;padding:14px 18px;border-radius:12px;'
-                    f'background:#f9fafb;border-left:6px solid #4f46e5;'
-                    f'font-size:15px;color:#374151;">'
+                    f'background:#FBFAF7;border-left:6px solid #7B2D26;'
+                    f'font-size:15px;color:#4A453E;">'
                     f"The judges <b>agree on {_agree}/{_total}</b> and "
                     f"<b>split on {_disagree}/{_total}</b> cases."
                     f"</div>"
@@ -1399,7 +1521,7 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                 # (5) Provenance caption.
                 gr.HTML(
                     '<div style="margin-top:10px;padding:8px 12px;border-radius:8px;'
-                    'background:#eef2ff;color:#3730a3;font-size:13px;">'
+                    'background:#F3EFE9;color:#5C211C;font-size:13px;">'
                     "🔒 Verdicts are precomputed over a fixed internal probe corpus "
                     "(held internally, never displayed). Live judging runs on a GPU "
                     "backend."
@@ -1427,9 +1549,9 @@ with gr.Blocks(**_blocks_kwargs) as demo:
             # Debate adjudicates. Static + light; nothing auto-runs here.
             gr.HTML(
                 '<div style="margin:6px 0 2px;padding:14px 18px;border-radius:12px;'
-                'background:#fef3c7;border-left:6px solid #d97706;font-size:14px;'
-                'color:#374151;line-height:1.55;">'
-                '<span style="font-weight:800;color:#92400e;letter-spacing:.03em;">'
+                'background:#F4EEE0;border-left:6px solid #9A7B3A;font-size:14px;'
+                'color:#4A453E;line-height:1.55;">'
+                '<span style="font-weight:800;color:#6E5320;letter-spacing:.03em;">'
                 '→ ESCALATE TO CONSTITUTIONAL DEBATE</span><br>'
                 "When a config certifies as <b>REVIEW</b> (the MODERATE refusal-drift "
                 "band), the deploy/route call is genuinely contested — reasonable "
@@ -1458,7 +1580,7 @@ with gr.Blocks(**_blocks_kwargs) as demo:
 
             gr.HTML(
                 '<div style="margin-top:10px;padding:8px 12px;border-radius:8px;'
-                'background:#eef2ff;color:#3730a3;font-size:13px;">'
+                'background:#F3EFE9;color:#5C211C;font-size:13px;">'
                 "🔒 The certificate carries only screen results, bands, and the "
                 "verdict — never any probe prompt or model output. The signed "
                 "payload is canonical JSON (sorted keys) of every field except the "
@@ -1488,8 +1610,8 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                 "verdict. Clear-HIGH cells stay **ROUTE** without a debate (foregone)."
             )
             gr.HTML(
-                '<div style="padding:8px 12px;border-radius:8px;background:#eef2ff;'
-                'color:#3730a3;font-size:13px;margin-bottom:8px;">'
+                '<div style="padding:8px 12px;border-radius:8px;background:#F3EFE9;'
+                'color:#5C211C;font-size:13px;margin-bottom:8px;">'
                 "🔒 The debate adjudicates a <b>de-identified config-deployment "
                 "question</b> — no probe prompt or model corpus text is ever shown. "
                 "Stances: <b>DEPLOY</b> (ship it) · <b>ROUTE</b> (fall back to the "
@@ -1529,6 +1651,10 @@ with gr.Blocks(**_blocks_kwargs) as demo:
 
 
 if __name__ == "__main__":
+    import inspect as _inspect
+
+    # gradio 6.x moved theme to launch(); 5.9.1 (pinned) takes it on Blocks. Pass
+    # at launch only if this version's launch() accepts it, to stay dual-safe.
     _launch_kwargs: dict = {}
     if "theme" in _inspect.signature(gr.Blocks.launch).parameters:
         _launch_kwargs["theme"] = theme
