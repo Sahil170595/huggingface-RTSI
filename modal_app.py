@@ -13,12 +13,16 @@ API contract (POST /generate):
                    HTTP 400 (unknown model, empty prompt, bad max_new_tokens)
                    — FastAPI HTTPException, body {"detail": "<message>"}
 
-Allowed model IDs (hardcoded allowlist — reject unknown model strings):
-    "Qwen/Qwen2.5-7B-Instruct"          (default; production debate quality)
-    "Qwen/Qwen2.5-1.5B-Instruct"        (small; fast round-trips during dev)
-    "Qwen/Qwen2.5-0.5B-Instruct"        (tiny; CI / smoke tests)
-    "mistralai/Mistral-7B-Instruct-v0.3" (second debate voice alongside Qwen-7B)
-    "HuggingFaceTB/SmolLM2-1.7B-Instruct" (third ungated small model)
+Endpoints:
+    POST /generate — debate-turn generation (models in DEBATE_MODELS)
+    POST /judge    — safety-judge classification (models in JUDGE_MODELS);
+                     request {"model", "prompt", "response", "max_new_tokens"},
+                     response {"text": "<raw judge completion>", "quantization"};
+                     the judge's own moderation chat template is applied
+                     server-side (Granite Guardian needs guardian_config).
+
+Allowed model IDs are the hardcoded DEBATE_MODELS / JUDGE_MODELS allowlists
+below — unknown model strings are rejected with HTTP 400.
 
 Multi-model debate support:
     Each Modal container loads ONE model (the `model_id` parameter).  The debate
@@ -96,13 +100,28 @@ import modal
 # Multi-model debates reference these by exact HF repo name.
 # ---------------------------------------------------------------------------
 
-ALLOWED_MODELS: set[str] = {
+DEBATE_MODELS: set[str] = {
+    # 2024-generation cohort (kept for cached-replay compatibility)
     "Qwen/Qwen2.5-7B-Instruct",
     "Qwen/Qwen2.5-1.5B-Instruct",
     "Qwen/Qwen2.5-0.5B-Instruct",
     "mistralai/Mistral-7B-Instruct-v0.3",
     "HuggingFaceTB/SmolLM2-1.7B-Instruct",
+    # 2025/26-generation cohort (current debate trio — three distinct families)
+    "Qwen/Qwen3-8B",
+    "microsoft/Phi-4-mini-instruct",
+    "HuggingFaceTB/SmolLM3-3B",
 }
+
+# Safety-judge models are served only by the /judge endpoint, which applies
+# each judge's own classification chat template server-side (Granite Guardian
+# additionally needs a guardian_config the generic /generate path cannot express).
+JUDGE_MODELS: set[str] = {
+    "Qwen/Qwen3Guard-Gen-8B",
+    "ibm-granite/granite-guardian-3.3-8b",
+}
+
+ALLOWED_MODELS: set[str] = DEBATE_MODELS | JUDGE_MODELS
 
 _DEFAULT_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 
@@ -123,10 +142,13 @@ def _quantization_for(model_id: str) -> str:
 _image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install(
-        "torch>=2.2.0",
-        "transformers>=4.40.0",
-        "accelerate>=0.30.0",
-        "bitsandbytes>=0.43.0",   # 4-bit quantisation on A10g for 7B models
+        "torch>=2.4.0",
+        # 4.57.x is the first line that ships Qwen3 (enable_thinking), SmolLM3,
+        # Phi-4-mini, Qwen3Guard-Gen and Granite-Guardian-3.3 chat templates.
+        # Pinned below the v5 major to avoid the torch_dtype-removal break.
+        "transformers>=4.57,<5",
+        "accelerate>=0.34.0",
+        "bitsandbytes>=0.43.0",   # 4-bit quantisation on A10g for the legacy 7B cohort
         "sentencepiece>=0.1.99",
         "protobuf>=4.25.0",       # required by sentencepiece wheels
         "fastapi[standard]>=0.110.0",  # Modal 1.x web endpoints are FastAPI-backed
@@ -214,11 +236,21 @@ class DebateInferenceServer:
 
         # Apply chat template when the tokeniser ships one (all instruct models do).
         if getattr(self.tok, "chat_template", None):
+            mid = self.model_id.lower()
             messages = [{"role": "user", "content": prompt}]
+            template_kwargs: dict = {}
+            # Reasoning-mode suppression: a 220-token debate turn cannot afford
+            # a <think> preamble. Qwen3 exposes enable_thinking in its template;
+            # SmolLM3 reads a /no_think system flag.
+            if "qwen3" in mid and "guard" not in mid:
+                template_kwargs["enable_thinking"] = False
+            if "smollm3" in mid:
+                messages = [{"role": "system", "content": "/no_think"}] + messages
             enc_text = self.tok.apply_chat_template(
                 messages,
                 tokenize=False,
                 add_generation_prompt=True,
+                **template_kwargs,
             )
         else:
             enc_text = prompt
@@ -240,6 +272,57 @@ class DebateInferenceServer:
         gen_ids = out_ids[0, prompt_len:]
         return self.tok.decode(gen_ids, skip_special_tokens=True).strip()
 
+    @modal.method()
+    def judge(self, prompt: str, response: str, max_new_tokens: int = 48) -> str:
+        """Classify one (prompt, response) pair with this container's judge model.
+
+        Applies the judge's OWN moderation chat template (the whole reason the
+        /judge endpoint exists — Granite Guardian needs guardian_config, and
+        Qwen3Guard moderates the conversation turns directly). Decoding is
+        greedy: judge verdicts must be deterministic.
+
+        Returns the raw completion text; the caller parses the verdict
+        (judges.py parse_qwen3guard / parse_granite_guardian).
+        """
+        import torch
+
+        mid = self.model_id.lower()
+        messages = [
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": response},
+        ]
+        if "granite-guardian" in mid:
+            # Granite Guardian templates take the risk definition via
+            # guardian_config; "harm" is the umbrella social-harm risk.
+            enc_text = self.tok.apply_chat_template(
+                messages,
+                guardian_config={"risk_name": "harm"},
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        else:
+            # Qwen3Guard-Gen: template formats the moderation request over the
+            # conversation turns as-is.
+            enc_text = self.tok.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+
+        input_ids = self.tok(enc_text, return_tensors="pt").input_ids.cuda()
+        prompt_len = input_ids.shape[-1]
+
+        with torch.no_grad():
+            out_ids = self.mdl.generate(
+                input_ids,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+                pad_token_id=self.tok.eos_token_id,
+            )
+
+        gen_ids = out_ids[0, prompt_len:]
+        return self.tok.decode(gen_ids, skip_special_tokens=True).strip()
+
 
 # ---------------------------------------------------------------------------
 # Web endpoint — HTTP POST /generate, matching the shared client contract
@@ -252,6 +335,27 @@ class DebateInferenceServer:
 #
 # The @modal.fastapi_endpoint label becomes the URL path suffix printed by `modal deploy`.
 # ---------------------------------------------------------------------------
+
+def _require_bearer_auth(authorization: str) -> None:
+    """Shared bearer-token check for both web endpoints. Raises 401 on failure."""
+    import hmac
+
+    expected = os.environ.get("QUANTSAFE_MODAL_TOKEN", "")
+    if not expected:
+        raise fastapi.HTTPException(
+            status_code=401,
+            detail="endpoint auth is not configured: the quantsafe-auth secret "
+                   "does not expose QUANTSAFE_MODAL_TOKEN",
+        )
+    if not hmac.compare_digest(
+        authorization.encode(), f"Bearer {expected}".encode()
+    ):
+        raise fastapi.HTTPException(
+            status_code=401,
+            detail="missing or invalid Authorization header "
+                   "(expected: 'Bearer <token>')",
+        )
+
 
 @app.function(secrets=[modal.Secret.from_name("quantsafe-auth")])
 @modal.fastapi_endpoint(method="POST", label="generate")
@@ -280,23 +384,7 @@ def generate_endpoint(
         401  secret unset, or Authorization bearer token missing/mismatched
         400  unknown model, empty prompt, or non-integer max_new_tokens
     """
-    import hmac
-
-    expected = os.environ.get("QUANTSAFE_MODAL_TOKEN", "")
-    if not expected:
-        raise fastapi.HTTPException(
-            status_code=401,
-            detail="endpoint auth is not configured: the quantsafe-auth secret "
-                   "does not expose QUANTSAFE_MODAL_TOKEN",
-        )
-    if not hmac.compare_digest(
-        authorization.encode(), f"Bearer {expected}".encode()
-    ):
-        raise fastapi.HTTPException(
-            status_code=401,
-            detail="missing or invalid Authorization header "
-                   "(expected: 'Bearer <token>')",
-        )
+    _require_bearer_auth(authorization)
 
     model_id: str = body.get("model", _DEFAULT_MODEL)
     prompt = body.get("prompt", "")
@@ -307,10 +395,10 @@ def generate_endpoint(
             status_code=400, detail="max_new_tokens must be an integer",
         )
 
-    if model_id not in ALLOWED_MODELS:
+    if model_id not in DEBATE_MODELS:
         raise fastapi.HTTPException(
             status_code=400,
-            detail=f"model {model_id!r} not allowed. Allowed: {sorted(ALLOWED_MODELS)}",
+            detail=f"model {model_id!r} not allowed. Allowed: {sorted(DEBATE_MODELS)}",
         )
 
     if not isinstance(prompt, str) or not prompt.strip():
@@ -323,4 +411,60 @@ def generate_endpoint(
 
     server = DebateInferenceServer(model_id=model_id)
     text = server.generate.remote(prompt, max_new_tokens)
+    return {"text": text, "quantization": _quantization_for(model_id)}
+
+
+@app.function(secrets=[modal.Secret.from_name("quantsafe-auth")])
+@modal.fastapi_endpoint(method="POST", label="judge")
+def judge_endpoint(
+    body: dict[str, Any],
+    authorization: str = fastapi.Header(default=""),
+) -> dict[str, str]:
+    """HTTP POST handler for safety-judge classification.
+
+    Request JSON:
+        {
+            "model":          "<hf_model_id>",   # must be in JUDGE_MODELS
+            "prompt":         "<user prompt being judged>",
+            "response":       "<assistant response being judged>",
+            "max_new_tokens": 48                 # optional
+        }
+
+    Response JSON (HTTP 200):
+        {"text": "<raw judge completion>", "quantization": "fp16"}
+
+    The raw completion is returned untouched; verdict parsing lives client-side
+    in judges.py (parse_qwen3guard / parse_granite_guardian) so the parsing
+    logic stays unit-testable without a GPU.
+
+    Errors mirror /generate: 401 (auth), 400 (unknown judge model / bad input).
+    """
+    _require_bearer_auth(authorization)
+
+    model_id: str = body.get("model", "")
+    prompt = body.get("prompt", "")
+    response = body.get("response", "")
+    try:
+        max_new_tokens: int = int(body.get("max_new_tokens", 48))
+    except (TypeError, ValueError):
+        raise fastapi.HTTPException(
+            status_code=400, detail="max_new_tokens must be an integer",
+        )
+
+    if model_id not in JUDGE_MODELS:
+        raise fastapi.HTTPException(
+            status_code=400,
+            detail=f"judge model {model_id!r} not allowed. Allowed: {sorted(JUDGE_MODELS)}",
+        )
+
+    for field, value in (("prompt", prompt), ("response", response)):
+        if not isinstance(value, str) or not value.strip():
+            raise fastapi.HTTPException(
+                status_code=400, detail=f"{field} must be a non-empty string",
+            )
+
+    max_new_tokens = max(1, min(max_new_tokens, 1024))
+
+    server = DebateInferenceServer(model_id=model_id)
+    text = server.judge.remote(prompt, response, max_new_tokens)
     return {"text": text, "quantization": _quantization_for(model_id)}

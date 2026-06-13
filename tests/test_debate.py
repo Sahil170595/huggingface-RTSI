@@ -263,15 +263,19 @@ class TestConsensusLabel:
         # Pin the documented bar so a future change is loud.
         assert CONSENSUS_AGREEMENT_THRESHOLD == pytest.approx(2 / 3)
 
-    def test_cached_substrate_example_labels_as_no_consensus(self):
-        # The bundled debate example is exactly the 1-1 tie at 0.5 agreement —
-        # the case this helper exists for. Read-only: the cache is NOT edited.
+    def test_cached_substrate_example_reaches_consensus(self):
+        # The bundled debate example is the SOTA 3-model cohort (Qwen3-8B +
+        # Phi-4-mini + SmolLM3-3B): a genuine 2/3 majority for CONDITIONAL, so
+        # it labels CONSENSUS with no safety-first tie-break. An odd cohort
+        # guarantees a strict majority. Read-only: the cache is NOT edited.
         cached = json.loads(
             (_SPACE / "substrate" / "debate_examples.json").read_text(encoding="utf-8")
         )
-        out = consensus_label(cached["consensus"])
-        assert out["label"] == LABEL_NO_CONSENSUS
-        assert "tie-break" in out["explanation"]
+        consensus = cached["consensus"]
+        assert consensus["agreement"] >= 2 / 3
+        out = consensus_label(consensus)
+        assert out["label"] == LABEL_CONSENSUS
+        assert "consensus bar" in out["explanation"]
 
 
 # ---------------------------------------------------------------------------

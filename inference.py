@@ -100,11 +100,23 @@ def _infer_cpu(
         # so generate() never has to guess padding.
         if getattr(tok, "chat_template", None):
             messages = [{"role": "user", "content": prompt}]
+            template_kwargs: dict = {}
+            mid = model_id.lower()
+            # Reasoning-mode suppression: at the live tab's small token budget
+            # a <think> preamble would consume the whole budget before any
+            # refusal text appears. Qwen3 exposes enable_thinking in its
+            # template; SmolLM3 reads a /no_think system flag. Templates that
+            # use neither ignore the extra context.
+            if "qwen3" in mid and "guard" not in mid:
+                template_kwargs["enable_thinking"] = False
+            if "smollm3" in mid:
+                messages = [{"role": "system", "content": "/no_think"}] + messages
             enc = tok.apply_chat_template(
                 messages,
                 add_generation_prompt=True,
                 return_tensors="pt",
                 return_dict=True,
+                **template_kwargs,
             )
         else:
             enc = tok(prompt, return_tensors="pt")

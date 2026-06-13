@@ -126,8 +126,10 @@ QUANTS = ["GPTQ", "AWQ", "Q2_K", "Q3_K_S", "Q4_K_M", "Q5_K_M", "Q6_K", "Q8_0"]
 HEADLINE_MODEL = "qwen2.5-1.5b"
 HEADLINE_QUANT = "GPTQ"
 
-# Live-tab instruct models (all <= 7B).
+# Live-tab instruct models (all <= 2B; small enough for fp32 CPU inference).
 LIVE_MODELS = [
+    "Qwen/Qwen3-0.6B",
+    "Qwen/Qwen3-1.7B",
     "Qwen/Qwen2.5-1.5B-Instruct",
     "meta-llama/Llama-3.2-1B-Instruct",
     "unsloth/Llama-3.2-1B-Instruct",
@@ -1024,8 +1026,13 @@ LIVE_DEBATE_QUESTION = (
     "baseline, or deploy CONDITIONAL on passing a targeted safety probe?"
 )
 
-# Production (Modal) debaters — bigger models, swapped in by backend="modal".
-LIVE_DEBATE_MODELS = ["Qwen/Qwen2.5-7B-Instruct", "mistralai/Mistral-7B-Instruct-v0.3"]
+# Production (Modal) debaters — three distinct model families (odd count, so a
+# majority always exists and no safety-first tie-break asterisk is needed).
+LIVE_DEBATE_MODELS = [
+    "Qwen/Qwen3-8B",
+    "microsoft/Phi-4-mini-instruct",
+    "HuggingFaceTB/SmolLM3-3B",
+]
 
 
 def run_live_debate(question: str):
