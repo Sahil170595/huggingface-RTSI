@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import time
 from dataclasses import dataclass
@@ -229,7 +230,7 @@ def parse_shieldgemma(raw: str) -> str:
 # live here, so the parsing stays unit-testable without a GPU.
 # ---------------------------------------------------------------------------
 
-QWEN3GUARD = "Qwen/Qwen3Guard-Gen-8B"
+QWEN3GUARD = "Qwen/Qwen3Guard-Gen-0.6B"
 GRANITE_GUARDIAN = "ibm-granite/granite-guardian-3.3-8b"
 
 
@@ -526,6 +527,121 @@ def compute_agreement(verdicts_by_judge: list[list[str]]) -> dict:
         "invalid_reason": invalid_reason,
         "n_judges": n_judges,
         "n_items": n_items,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Gold-label validation
+# ---------------------------------------------------------------------------
+
+def _wilson_interval(correct: int, total: int) -> tuple[float, float]:
+    """95% Wilson score interval for a binomial proportion."""
+    if total <= 0:
+        return float("nan"), float("nan")
+    z = 1.959963984540054
+    proportion = correct / total
+    denominator = 1.0 + (z * z / total)
+    center = (proportion + z * z / (2.0 * total)) / denominator
+    margin = (
+        z
+        * math.sqrt(
+            proportion * (1.0 - proportion) / total
+            + z * z / (4.0 * total * total)
+        )
+        / denominator
+    )
+    return max(0.0, center - margin), min(1.0, center + margin)
+
+
+def classification_metrics(expected: list[str], predicted: list[str]) -> dict:
+    """Score safe/unsafe predictions against curated corpus labels.
+
+    ``unclear`` predictions count as errors and reduce recall for the expected
+    class. Macro F1 is averaged across the safe and unsafe classes.
+    """
+    if len(expected) != len(predicted):
+        raise ValueError("expected and predicted labels must align")
+    invalid_expected = sorted(set(expected) - {"safe", "unsafe"})
+    invalid_predicted = sorted(set(predicted) - set(VERDICTS))
+    if invalid_expected:
+        raise ValueError(f"unsupported expected labels: {invalid_expected}")
+    if invalid_predicted:
+        raise ValueError(f"unsupported predicted labels: {invalid_predicted}")
+
+    total = len(expected)
+    correct = sum(want == got for want, got in zip(expected, predicted))
+    covered = sum(got != "unclear" for got in predicted)
+    per_class: dict[str, dict[str, float | int]] = {}
+    f1_values: list[float] = []
+    for label in ("safe", "unsafe"):
+        tp = sum(want == label and got == label for want, got in zip(expected, predicted))
+        fp = sum(want != label and got == label for want, got in zip(expected, predicted))
+        fn = sum(want == label and got != label for want, got in zip(expected, predicted))
+        precision = tp / (tp + fp) if tp + fp else 0.0
+        recall = tp / (tp + fn) if tp + fn else 0.0
+        f1 = 2.0 * precision * recall / (precision + recall) if precision + recall else 0.0
+        f1_values.append(f1)
+        per_class[label] = {
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            "support": sum(want == label for want in expected),
+        }
+
+    ci_low, ci_high = _wilson_interval(correct, total)
+    return {
+        "n_items": total,
+        "n_correct": correct,
+        "accuracy": correct / total if total else float("nan"),
+        "accuracy_ci_low": ci_low,
+        "accuracy_ci_high": ci_high,
+        "macro_f1": sum(f1_values) / len(f1_values),
+        "coverage": covered / total if total else float("nan"),
+        "per_class": per_class,
+    }
+
+
+def selective_consensus_metrics(
+    expected: list[str],
+    verdicts_by_judge: list[list[str]],
+) -> dict:
+    """Validate only items where every judge emits the same non-unclear label."""
+    if not verdicts_by_judge:
+        return {
+            "n_items": len(expected),
+            "n_covered": 0,
+            "n_correct": 0,
+            "coverage": 0.0,
+            "accuracy": float("nan"),
+            "accuracy_ci_low": float("nan"),
+            "accuracy_ci_high": float("nan"),
+        }
+    if any(len(vector) != len(expected) for vector in verdicts_by_judge):
+        raise ValueError("expected labels and judge verdict vectors must align")
+
+    covered_predictions: list[str] = []
+    covered_expected: list[str] = []
+    for index, want in enumerate(expected):
+        labels = {vector[index] for vector in verdicts_by_judge}
+        if len(labels) == 1:
+            label = next(iter(labels))
+            if label != "unclear":
+                covered_predictions.append(label)
+                covered_expected.append(want)
+
+    covered = len(covered_predictions)
+    correct = sum(
+        want == got for want, got in zip(covered_expected, covered_predictions)
+    )
+    ci_low, ci_high = _wilson_interval(correct, covered)
+    return {
+        "n_items": len(expected),
+        "n_covered": covered,
+        "n_correct": correct,
+        "coverage": covered / len(expected) if expected else 0.0,
+        "accuracy": correct / covered if covered else float("nan"),
+        "accuracy_ci_low": ci_low,
+        "accuracy_ci_high": ci_high,
     }
 
 

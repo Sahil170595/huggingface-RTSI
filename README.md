@@ -14,21 +14,29 @@ tags:
   - sponsor:openai
   - sponsor:modal
   - achievement:offbrand
+  - achievement:welltuned
   - achievement:sharing
   - achievement:fieldnotes
   - safety
+  - safety-evaluation
   - quantization
   - llm
   - refusal
+  - text-classification
+  - modernbert
   - gradio
 models:
   - Qwen/Qwen3-0.6B
   - Qwen/Qwen3-1.7B
+  - Qwen/Qwen2.5-1.5B-Instruct
+  - meta-llama/Llama-3.2-1B-Instruct
+  - unsloth/Llama-3.2-1B-Instruct
   - Qwen/Qwen3-8B
   - microsoft/Phi-4-mini-instruct
   - HuggingFaceTB/SmolLM3-3B
-  - Qwen/Qwen3Guard-Gen-8B
+  - Qwen/Qwen3Guard-Gen-0.6B
   - ibm-granite/granite-guardian-3.3-8b
+  - Crusadersk/quantsafe-refusal-modernbert
 ---
 
 # QuantSafe Certifier
@@ -58,9 +66,13 @@ The absolute deltas are normalized across the reference matrix and combined usin
 
 - **45 measured cells** across 6 models and 8 quantization formats
 - **23 LOW / 13 MODERATE / 9 HIGH**
-- **ROC AUC 0.8445**, including leave-one-cell-out validation
+- **ROC AUC 0.8445** under leave-one-cell-out validation
+- **ROC AUC 0.8403** under stricter leave-one-model-family-out validation, with a stratified-bootstrap 95% CI of **0.7080–0.9475**
 - Routing the 9 HIGH cells routes **20%** of configurations and recovers **76.17%** of the measured refusal-rate gap
-- Two independent safety judges agree on **35/40** cases, Cohen's kappa **0.7531 (`RELIABLE`)**
+- Two independent safety judges agree on **35/40** cases, Cohen's kappa **0.7484 (`RELIABLE`)**
+- Qwen3Guard-Gen-0.6B reaches **85.0%** curated-label accuracy and Granite Guardian reaches **92.5%**
+- Unanimous non-unclear judge decisions cover **87.5%** of the corpus and are **94.3%** accurate
+- The fine-tuned 149.6M-parameter semantic refusal cross-check reaches **97.73% accuracy / 0.976 refusal F1** on 441 held-out XSTest responses, versus **52.61% / 0.154** for the legacy opener lexicon
 - Cached three-model debate reaches **CONDITIONAL** at **0.67 agreement**, a genuine 2/3 majority
 
 These are screening results on a fixed reference matrix, not a claim that the screen replaces a full safety evaluation. A HIGH result explicitly routes to the expensive safety path.
@@ -68,22 +80,38 @@ These are screening results on a fixed reference matrix, not a claim that the sc
 ## Six-tab workflow
 
 1. **Score a config**: inspect any measured model/quantization cell, the risk heatmap, and the routing Pareto curve.
-2. **Live screen**: compare a baseline and candidate over a held-internal refusal probe set. Only aggregate features are shown.
-3. **Judge Agreement**: inspect agreement between Qwen3Guard-Gen-8B and Granite Guardian 3.3 8B.
+2. **Live screen**: compare a baseline and candidate over a held-internal refusal probe set. The calibrated lexical score and fine-tuned semantic refusal rates are reported separately; only aggregates are shown.
+3. **Judge Agreement**: inspect agreement and curated-label accuracy for Qwen3Guard-Gen-0.6B and Granite Guardian 3.3 8B.
 4. **Safety Certificate**: sign the score, band, judge agreement, and route decision with Ed25519.
 5. **Constitutional Debate**: replay or run a Modal-backed debate for contested MODERATE/MIXED cases.
 6. **About**: review the method, thresholds, calibration, and limitations.
 
 ## Small-model compliance
 
-The Build Small limit applies to each model individually. Every model used here is at most approximately 8.2B parameters, well below the **32B per-model cap**.
+The Build Small rule caps the **total model catalog at 32B parameters**. Counting
+every runtime repository listed in this model card, including both equivalent
+Llama 3.2 1B repositories rather than deduplicating them, QuantSafe totals
+**30.972674562B parameters**.
 
-| Role | Largest model |
+| Role | Runtime catalog |
 |---|---|
-| Live refusal screen | Qwen3-1.7B |
-| Safety judges | Qwen3Guard-Gen-8B / Granite Guardian 3.3 8B |
-| Constitutional debate | Qwen3-8B |
-| Reference matrix | Mistral-7B / Qwen2.5-7B |
+| Live refusal screen | Qwen3-0.6B, Qwen3-1.7B, Qwen2.5-1.5B, Llama 3.2 1B (two repositories) |
+| Semantic refusal cross-check | QuantSafe Refusal ModernBERT (149.6M, fine-tuned from ModernBERT-base) |
+| Safety judges | Qwen3Guard-Gen-0.6B, Granite Guardian 3.3 8B |
+| Constitutional debate | Qwen3-8B, Phi-4-mini-instruct, SmolLM3-3B |
+
+The 0.6B Qwen guard is deliberate rather than cosmetic: the
+[Qwen3Guard report](https://huggingface.co/papers/2510.14276) reports an English
+response-classification average of 82.0 for 0.6B versus 83.9 for 8B. On this
+project's fixed 40-item corpus, replacing the 8B guard preserved an 85.0%
+accuracy result and a RELIABLE two-family agreement band while reducing the
+catalog by roughly 7.44B parameters.
+
+The live semantic cross-check is a project-specific fine-tune published at
+[Crusadersk/quantsafe-refusal-modernbert](https://huggingface.co/Crusadersk/quantsafe-refusal-modernbert).
+It was trained on 37,934 balanced WildGuardMix prompt/response pairs and tested
+on 441 unambiguous XSTest GPT-4 responses. It remains a separate supporting
+signal rather than silently changing the frozen RTSI calibration.
 
 ## Modal runtime
 
@@ -93,7 +121,7 @@ The endpoint requires `Authorization: Bearer $MODAL_TOKEN`; unknown models are r
 
 ## Reproducibility and privacy
 
-- All local and Modal `from_pretrained` calls use audited 40-character commit revisions.
+- All local and Modal `from_pretrained` calls use audited 40-character commit revisions, including the fine-tuned classifier.
 - The 45-cell substrate and cached judge/debate outputs are versioned under `substrate/`.
 - Probe prompts and raw live completions are never rendered in the UI.
 - Certificates are verified against this Space's pinned issuer public key:
@@ -117,7 +145,7 @@ The endpoint requires `Authorization: Bearer $MODAL_TOKEN`; unknown models are r
 
 ```bash
 python -m pytest -q
-ruff check app.py cert_signer.py debate.py features.py inference.py judges.py modal_app.py model_revisions.py rtsi_core.py scripts
+ruff check app.py cert_signer.py debate.py features.py inference.py judges.py modal_app.py model_revisions.py rtsi_core.py validation.py scripts
 python app.py
 ```
 

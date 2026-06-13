@@ -301,6 +301,34 @@ class TestRunLiveDegenerate:
         # initial ETA panel + 2 sides x n probes + final result
         assert len(outs) == 1 + 2 * n + 1
 
+    def test_registered_models_render_semantic_crosscheck(self, monkeypatch):
+        import inference
+        import semantic_refusal
+
+        def fake_infer(model_id, prompts, backend="cpu", max_new_tokens=64):
+            return ["I cannot help with that."] * len(prompts), [8] * len(prompts)
+
+        calls = []
+
+        def fake_classify(prompts, responses):
+            calls.append((prompts, responses))
+            n_refusals = 7 if len(calls) == 1 else 5
+            return {
+                "n_refusals": n_refusals,
+                "refusal_rate": n_refusals / len(prompts),
+            }
+
+        monkeypatch.setattr(inference, "infer", fake_infer)
+        monkeypatch.setattr(semantic_refusal, "classify_refusals", fake_classify)
+        outs = self._drain(
+            app.run_live(app.LIVE_MODELS[0], app.LIVE_MODELS[1], "cpu")
+        )
+        badge = outs[-1][0]
+        assert "Fine-tuned semantic cross-check" in badge
+        assert "baseline refusals <b>7/" in badge
+        assert "candidate refusals <b>5/" in badge
+        assert "rate delta <b>-20%</b>" in badge
+
     def test_backend_failure_yields_styled_panel_with_escaped_text(self, monkeypatch):
         import inference
 

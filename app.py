@@ -43,6 +43,9 @@ CSV_PATH = str(_SUBSTRATE / "rtsi_table.csv")
 DF = pd.read_csv(CSV_PATH, encoding="utf-8")
 SIM = json.loads((_SUBSTRATE / "tr163_routing_simulation.json").read_text(encoding="utf-8"))
 ANALYSIS = json.loads((_SUBSTRATE / "tr163_analysis.json").read_text(encoding="utf-8"))
+VALIDATION = json.loads(
+    (_SUBSTRATE / "validation_report.json").read_text(encoding="utf-8")
+)
 SUBSTRATE_ROWS = load_substrate_feature_rows(CSV_PATH)
 
 
@@ -182,6 +185,14 @@ LIVE_MAX_NEW_TOKENS = 64  # hf/modal backends: remote decode, not CPU-bound here
 OP_ROUTED_PCT = 20.0
 OP_RECOVERED_PCT = 76.17
 LOOCV_AUC = ANALYSIS["out_of_sample_loocv"]["roc_auc"]["auc"]  # 0.8445
+FAMILY_CV_AUC = VALIDATION["roc_auc"]["auc"]
+FAMILY_CV_CI_LOW = VALIDATION["roc_auc"]["ci_low"]
+FAMILY_CV_CI_HIGH = VALIDATION["roc_auc"]["ci_high"]
+SEMANTIC_MODEL_ID = "Crusadersk/quantsafe-refusal-modernbert"
+SEMANTIC_XSTEST_ACCURACY = 0.9773242630385488
+SEMANTIC_XSTEST_REFUSAL_F1 = 0.9759615384615384
+LEXICAL_XSTEST_ACCURACY = 0.5260770975056689
+LEXICAL_XSTEST_REFUSAL_F1 = 0.15384615384615385
 
 FEATURE_LABELS = {
     "dominant_prefix_share_delta": "dominant prefix share",
@@ -490,17 +501,25 @@ def _agreement_breakdown(judges: list[dict], zones: list[str]) -> dict:
 
 
 def build_judge_counts_df(judges: list[dict]) -> pd.DataFrame:
-    """Per-judge safe / unsafe / unclear verdict counts as a tidy table."""
+    """Per-judge verdict counts and gold-label quality as a tidy table."""
     rows = []
     for jr in judges:
         counts = jr.get("counts", {}) or {}
+        metrics = jr.get("metrics", {}) or {}
         rows.append({
             "Judge": _short_judge_name(jr.get("model", "")),
             "Safe": int(counts.get("safe", 0)),
             "Unsafe": int(counts.get("unsafe", 0)),
             "Unclear": int(counts.get("unclear", 0)),
+            "Accuracy %": round(100.0 * float(metrics["accuracy"]), 1)
+            if isinstance(metrics.get("accuracy"), (int, float)) else None,
+            "Macro F1": round(float(metrics["macro_f1"]), 3)
+            if isinstance(metrics.get("macro_f1"), (int, float)) else None,
         })
-    return pd.DataFrame(rows, columns=["Judge", "Safe", "Unsafe", "Unclear"])
+    return pd.DataFrame(
+        rows,
+        columns=["Judge", "Safe", "Unsafe", "Unclear", "Accuracy %", "Macro F1"],
+    )
 
 
 def build_judge_counts_fig(judges: list[dict]) -> go.Figure:
@@ -1307,6 +1326,39 @@ def run_live(baseline_model: str, candidate_model: str, backend: str):
         risk = str(result["risk"])
         fig = build_delta_fig(result["deltas"])
 
+        semantic_panel = ""
+        if baseline_model in LIVE_MODELS and candidate_model in LIVE_MODELS:
+            try:
+                from semantic_refusal import classify_refusals
+
+                semantic_base = classify_refusals(probes, base_completions)
+                semantic_candidate = classify_refusals(probes, cand_completions)
+                semantic_delta = (
+                    float(semantic_candidate["refusal_rate"])
+                    - float(semantic_base["refusal_rate"])
+                )
+                semantic_panel = (
+                    '<div style="margin-top:10px;padding:12px 16px;border-radius:6px;'
+                    'background:#F3EFE9;border:1px solid #E5E0D8;font-size:13px;'
+                    'color:#4A453E;line-height:1.55;">'
+                    "<b>Fine-tuned semantic cross-check:</b> baseline refusals "
+                    f"<b>{semantic_base['n_refusals']}/{n}</b> · candidate refusals "
+                    f"<b>{semantic_candidate['n_refusals']}/{n}</b> · rate delta "
+                    f"<b>{semantic_delta:+.0%}</b>. This supporting signal does not "
+                    "change the calibrated RTSI score."
+                    "</div>"
+                )
+            except Exception as semantic_exc:  # noqa: BLE001 - optional support signal
+                semantic_panel = (
+                    '<div style="margin-top:10px;padding:12px 16px;border-radius:6px;'
+                    'background:#F3EFE9;border:1px solid #E5E0D8;font-size:13px;'
+                    'color:#6B6660;">'
+                    "<b>Semantic cross-check unavailable:</b> "
+                    f"{html.escape(type(semantic_exc).__name__)}. "
+                    "The calibrated lexical RTSI result above is unaffected."
+                    "</div>"
+                )
+
         summary = (
             f'<div style="margin-top:10px;font-size:13px;color:#6B6660;">'
             f"screened <b>{n}</b> internal probes · "
@@ -1319,7 +1371,12 @@ def run_live(baseline_model: str, candidate_model: str, backend: str):
         # UNKNOWN means the refusal-drift features are undefined (neither side
         # refused) — show the em-dash, not a meaningless 0.0xxx number.
         score_display = None if risk == "UNKNOWN" else score
-        badge = _badge(risk, score_display) + summary + _recommendation_card(risk, None)
+        badge = (
+            _badge(risk, score_display)
+            + summary
+            + semantic_panel
+            + _recommendation_card(risk, None)
+        )
         if result.get("degenerate"):
             accent = RISK_COLOR.get(risk, RISK_COLOR["UNKNOWN"])
             badge += (
@@ -1456,7 +1513,22 @@ weighted-summed into a single score in **[0, 1]**.
 Anchored on a **45-cell** matrix (6 models ≤ 7B × 8 quant formats), split
 **23 LOW / 13 MODERATE / 9 HIGH**. Routing just the 9 HIGH cells routes
 **20%** of configs and recovers **76.17%** of the total refusal-rate gap
-(`total_gap = 0.113778`). Validated by leave-one-cell-out, **AUC {LOOCV_AUC}**.
+(`total_gap = 0.113778`). Row-level leave-one-out reaches **AUC {LOOCV_AUC}**.
+The stricter leave-one-model-family-out evaluation reaches
+**AUC {FAMILY_CV_AUC:.4f}** with a stratified-bootstrap 95% interval of
+**{FAMILY_CV_CI_LOW:.4f}–{FAMILY_CV_CI_HIGH:.4f}**. Every held-out cell is
+scored using weights and normalization fit without any checkpoint from its
+model family.
+
+### Fine-tuned semantic cross-check
+The Live screen also reports refusal rates from
+[`{SEMANTIC_MODEL_ID}`](https://huggingface.co/{SEMANTIC_MODEL_ID}), a
+149.6M-parameter ModernBERT fine-tune. On 441 held-out XSTest responses it
+reaches **{SEMANTIC_XSTEST_ACCURACY:.2%} accuracy** and
+**{SEMANTIC_XSTEST_REFUSAL_F1:.3f} refusal F1**, compared with
+**{LEXICAL_XSTEST_ACCURACY:.2%} / {LEXICAL_XSTEST_REFUSAL_F1:.3f}** for the
+legacy opener lexicon. This is a separately reported supporting signal; it
+does not alter the frozen RTSI feature definition, score, or thresholds.
 
 ### The hidden-danger framing
 A quant can keep its benchmark numbers and still lose its safety posture. The
@@ -1670,6 +1742,16 @@ with gr.Blocks(
                 with gr.Column(scale=2):
                     pareto_plot = gr.Plot(PARETO_FIG)
             heatmap_plot = gr.Plot(HEATMAP_FIG)
+            gr.HTML(
+                '<div style="margin-top:8px;padding:12px 16px;border-radius:8px;'
+                'background:#F3EFE9;color:#4A453E;font-size:13px;line-height:1.5;">'
+                f"<b>Family-transfer check:</b> leave-one-model-family-out "
+                f"AUC <b>{FAMILY_CV_AUC:.4f}</b> "
+                f"(95% bootstrap CI {FAMILY_CV_CI_LOW:.4f}–{FAMILY_CV_CI_HIGH:.4f}). "
+                "No sibling checkpoint from the held-out family participates in fitting."
+                "</div>",
+                padding=False,
+            )
 
             score_btn.click(score_config, [model_dd, quant_dd], [badge_html, rec_html])
 
@@ -1688,11 +1770,34 @@ with gr.Blocks(
                 "</div>",
                 padding=False,
             )
+            gr.HTML(
+                '<div style="padding:12px 16px;border-radius:8px;background:#ECF0EA;'
+                'border-left:5px solid #4F6F52;color:#364B38;font-size:13px;'
+                'line-height:1.55;margin-bottom:10px;">'
+                '<b>Fine-tuned semantic cross-check:</b> '
+                f'<a href="https://huggingface.co/{SEMANTIC_MODEL_ID}" '
+                'target="_blank">QuantSafe Refusal ModernBERT</a> reaches '
+                f'<b>{SEMANTIC_XSTEST_ACCURACY:.2%} XSTest accuracy</b> and '
+                f'<b>{SEMANTIC_XSTEST_REFUSAL_F1:.3f} refusal F1</b>, versus '
+                f'{LEXICAL_XSTEST_ACCURACY:.2%} / '
+                f'{LEXICAL_XSTEST_REFUSAL_F1:.3f} for the opener lexicon. '
+                "It is reported separately so the frozen RTSI calibration stays valid."
+                "</div>",
+                padding=False,
+            )
             with gr.Row():
-                base_dd = gr.Dropdown(LIVE_MODELS, label="Baseline model",
-                                      value=LIVE_MODELS[0])
-                cand_dd = gr.Dropdown(LIVE_MODELS, label="Candidate model",
-                                      value=LIVE_MODELS[1])
+                with gr.Column(min_width=280):
+                    base_dd = gr.Dropdown(
+                        LIVE_MODELS,
+                        label="Baseline model",
+                        value=LIVE_MODELS[0],
+                    )
+                with gr.Column(min_width=280):
+                    cand_dd = gr.Dropdown(
+                        LIVE_MODELS,
+                        label="Candidate model",
+                        value=LIVE_MODELS[1],
+                    )
             backend_radio = gr.Radio(
                 ["cpu", "hf", "modal"], value="cpu", label="Backend",
                 info=("cpu = free + robust (default) · "
@@ -1755,9 +1860,9 @@ with gr.Blocks(
                     if isinstance(_kappa, (int, float)) else "—"
                 )
                 _trust_clause = (
-                    "strong enough to trust the consensus"
+                    "agreement passes the cohort reliability gate"
                     if _band == "RELIABLE"
-                    else "read the band before trusting the consensus"
+                    else "agreement does not pass the cohort reliability gate"
                 )
                 gr.Markdown(
                     "Cross-checking independent judges measures whether a "
@@ -1765,7 +1870,8 @@ with gr.Blocks(
                     f"classifiers corroborate at **kappa={_kappa_str} ({_band})** — "
                     f"{_trust_clause} — while the disagreements flag "
                     "exactly the cases that warrant human review. That is why you "
-                    "cross-check independent judges instead of trusting a single one."
+                    "cross-check independent judges instead of trusting a single one. "
+                    "Agreement is not accuracy; the curated-label check below reports both."
                 )
 
                 # (2) The two judges by name + verdict counts (table + bars).
@@ -1774,8 +1880,11 @@ with gr.Blocks(
                     with gr.Column(scale=1):
                         gr.Dataframe(
                             value=build_judge_counts_df(_judges),
-                            headers=["Judge", "Safe", "Unsafe", "Unclear"],
-                            datatype=["str", "number", "number", "number"],
+                            headers=[
+                                "Judge", "Safe", "Unsafe", "Unclear",
+                                "Accuracy %", "Macro F1",
+                            ],
+                            datatype=["str", "number", "number", "number", "number", "number"],
                             interactive=False, wrap=True,
                         )
                     with gr.Column(scale=1):
@@ -1795,6 +1904,30 @@ with gr.Blocks(
                     padding=False,
                 )
                 gr.Plot(build_disagreement_by_zone_fig(_brk["by_zone"]))
+
+                _selective = (
+                    (JUDGE_RESULTS.get("gold_validation", {}) or {})
+                    .get("selective_consensus", {}) or {}
+                )
+                if _selective:
+                    _covered = int(_selective.get("n_covered", 0))
+                    _correct = int(_selective.get("n_correct", 0))
+                    _coverage = float(_selective.get("coverage", 0.0))
+                    _accuracy = float(_selective.get("accuracy", 0.0))
+                    _ci_low = float(_selective.get("accuracy_ci_low", 0.0))
+                    _ci_high = float(_selective.get("accuracy_ci_high", 0.0))
+                    gr.HTML(
+                        '<div style="margin:8px 0;padding:14px 18px;border-radius:8px;'
+                        'background:#ECF0EA;border-left:5px solid #4F6F52;'
+                        'font-size:14px;color:#364B38;line-height:1.55;">'
+                        "<b>Curated-label check:</b> when both judges emit the same "
+                        f"non-unclear verdict, the panel covers <b>{_covered}/{_total} "
+                        f"({_coverage:.0%})</b> and gets <b>{_correct}/{_covered} "
+                        f"({_accuracy:.1%})</b> correct "
+                        f"(95% Wilson CI {_ci_low:.1%}–{_ci_high:.1%})."
+                        "</div>",
+                        padding=False,
+                    )
 
                 # (5) Provenance caption.
                 gr.HTML(

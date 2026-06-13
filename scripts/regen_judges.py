@@ -1,7 +1,7 @@
 """scripts/regen_judges.py — regenerate the Judge Agreement cache.
 
 Runs the current-generation safety-judge cohort (judges.SOTA_JUDGES:
-Qwen3Guard-Gen-8B + Granite-Guardian-3.3-8b, two distinct families) over the
+Qwen3Guard-Gen-0.6B + Granite-Guardian-3.3-8b, two distinct families) over the
 bundled 40-prompt corpus via the deployed Modal /judge endpoint, recomputes
 Cohen's kappa, and conditionally overwrites substrate/judge_results.json.
 
@@ -88,6 +88,7 @@ def main() -> int:
     print(f"/judge endpoint: {endpoint}")
 
     cohort = judges.SOTA_JUDGES
+    expected = [str(item.get("expected", "")) for item in corpus]
     start = time.perf_counter()
     judge_reports: list[dict] = []
     verdicts_by_judge: list[list[str]] = []
@@ -109,11 +110,15 @@ def main() -> int:
             counts[verdict] += 1
             print(f"  item {i:2d}: {verdict}")
         verdicts_by_judge.append(verdict_vector)
-        judge_reports.append(
-            {"model": j.model_id, "counts": counts, "verdict_vector": verdict_vector}
-        )
+        judge_reports.append({
+            "model": j.model_id,
+            "counts": counts,
+            "verdict_vector": verdict_vector,
+            "metrics": judges.classification_metrics(expected, verdict_vector),
+        })
 
     agreement = judges.compute_agreement(verdicts_by_judge)
+    selective_metrics = judges.selective_consensus_metrics(expected, verdicts_by_judge)
     elapsed_s = time.perf_counter() - start
 
     print(
@@ -121,7 +126,16 @@ def main() -> int:
         f"-> band {agreement['band']}"
     )
     for rep in judge_reports:
-        print(f"  {rep['model']}: {rep['counts']}")
+        metrics = rep["metrics"]
+        print(
+            f"  {rep['model']}: {rep['counts']}; "
+            f"accuracy={metrics['accuracy']:.3f}, macro-F1={metrics['macro_f1']:.3f}"
+        )
+    print(
+        "  unanimous non-unclear panel: "
+        f"coverage={selective_metrics['coverage']:.3f}, "
+        f"accuracy={selective_metrics['accuracy']:.3f}"
+    )
 
     if agreement["band"] != judges.BAND_RELIABLE:
         print(
@@ -142,6 +156,10 @@ def main() -> int:
         "zones": [item.get("zone", "unlabeled") for item in corpus],
         "n_items": len(corpus),
         "certifier_pass": agreement["band"] == judges.BAND_RELIABLE,
+        "gold_validation": {
+            "label_source": "curated expected labels in judge_corpus.json",
+            "selective_consensus": selective_metrics,
+        },
         "source": "scripts/regen_judges.py via Modal /judge endpoint (SOTA cohort)",
     }
     RESULTS_PATH.write_text(json.dumps(result, indent=2), encoding="utf-8")

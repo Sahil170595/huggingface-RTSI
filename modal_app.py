@@ -119,7 +119,7 @@ DEBATE_MODELS: set[str] = {
 # each judge's own classification chat template server-side (Granite Guardian
 # additionally needs a guardian_config the generic /generate path cannot express).
 JUDGE_MODELS: set[str] = {
-    "Qwen/Qwen3Guard-Gen-8B",
+    "Qwen/Qwen3Guard-Gen-0.6B",
     "ibm-granite/granite-guardian-3.3-8b",
 }
 

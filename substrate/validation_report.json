@@ -1,0 +1,21 @@
+{
+  "method": "leave-one-model-family-out",
+  "n_cells": 45,
+  "n_families": 4,
+  "families": [
+    "Llama",
+    "Mistral",
+    "Phi",
+    "Qwen"
+  ],
+  "material_loss_cutoff": 0.05,
+  "n_material_loss": 17,
+  "roc_auc": {
+    "auc": 0.8403361344537815,
+    "ci_low": 0.707983193277311,
+    "ci_high": 0.9474789915966386,
+    "n_resamples": 10000,
+    "seed": 20260613
+  },
+  "note": "Every held-out cell is scored with feature weights and normalization fit without any checkpoint from its model family."
+}
