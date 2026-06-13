@@ -65,17 +65,17 @@ ROC AUC = 0.8445  (leave-one-cell-out, 45 cells)
 **Screen**: Switch to "Judge Agreement" tab.
 **Screen shows**: two-classifier agreement panel:
 ```
-Classifier 1:  Llama-Guard-3-8B
-Classifier 2:  ShieldGemma-9b
-Combined:      ~17B parameters  (within the <=32B cap)
+Classifier 1:  Qwen3Guard-Gen-8B
+Classifier 2:  Granite-Guardian-3.3-8b
+Combined:      ~16B parameters  (within the <=32B cap)
 
 Corpus:        40 prompts
-Agreement:     36 / 40
-Cohen's kappa: 0.74  →  RELIABLE
-Split cases:   4  (flagged for human review)
+Agreement:     35 / 40
+Cohen's kappa: 0.75  →  RELIABLE
+Split cases:   5  (flagged for human review)
 ```
-**Voiceover**: "Before you trust any safety screen, you need to ask: is the judge itself reliable? Two independent classifiers — Llama-Guard and ShieldGemma — label the same 40-prompt corpus. Cohen's kappa of 0.74: RELIABLE. They agree on 36 of 40 and split on exactly 4 — those 4 get flagged for human review."
-**Camera lingers** on the four split-case rows to show the "needs human review" label.
+**Voiceover**: "Before you trust any safety screen, you need to ask: is the judge itself reliable? Two independent classifiers — Qwen3Guard and Granite Guardian — label the same 40-prompt corpus. Cohen's kappa of 0.75: RELIABLE. They agree on 35 of 40 and split on 5 — those 5 get flagged for human review."
+**Camera lingers** on the five split-case rows to show the "needs human review" label.
 
 ---
 
@@ -85,19 +85,20 @@ Split cases:   4  (flagged for human review)
 ```
 Config:    phi-2 + GPTQ
 Verdict:   ROUTE  (HIGH refusal-drift, score 0.6199)
-Kappa:     0.74   (judge cohort: RELIABLE)
+Kappa:     0.7531   (judge cohort: RELIABLE)
 Signature: Ed25519
 ```
 **Action**: Click "Verify". Screen shows:
 ```
-Signature:  VALID
+Signature:  VALID  (against this Space's pinned issuer key)
 ```
-**Voiceover**: "The screen results are Ed25519-signed. Click Verify — valid. The certificate cryptographically attests the verdict and the kappa together."
+**Voiceover**: "The screen results are Ed25519-signed. Click Verify — valid, against this Space's pinned issuer key. The certificate attests the verdict and the kappa together."
 **Action**: Click "Tamper test". A field is flipped in-place. Screen shows:
 ```
 Signature:  INVALID  ✗
 ```
-**Voiceover**: "Flip one field — invalid. Anyone with the public key can independently verify any certificate."
+**Voiceover**: "Flip one field — invalid. The signature is tamper-evident: any edit to the signed payload breaks it, and verification is pinned to this Space's published key."
+**Optional**: Click "Foreign re-sign test" to show that a cert re-signed under a different key passes a naive check but fails the pinned verify — that's why the key is pinned.
 
 ---
 
@@ -111,20 +112,20 @@ Debate:     cached replay  (live run activates when GPU backend is wired)
 ```
 **Screen shows replay unfolding**:
 ```
-Round 1
-  Qwen2.5-1.5B:   ROUTE    "refusal instability under this quant is a deployment risk"
-  Qwen2.5-0.5B:   CONDITIONAL  "acceptable with mitigation"
-  SmolLM2-1.7B:   ROUTE    "judge split on this config warrants routing"
+Round 1  (propose)
+  Qwen3-8B:            DEPLOY       "efficiency gain justifies it; risk is marginal"
+  Phi-4-mini-instruct: CONDITIONAL  "acceptable only behind a targeted probe"
+  SmolLM3-3B:          CONDITIONAL  "moderate band warrants mitigation, not a free ship"
 
-Round 2  (rebuttal)
-  Qwen2.5-1.5B:   ROUTE    (holds)
-  Qwen2.5-0.5B:   ROUTE    (concedes — constitutional pressure)
-  SmolLM2-1.7B:   ROUTE    (holds)
+Round 2  (critique)
+  Qwen3-8B:            ROUTE        (changes its mind — concedes the safety-first principle)
+  Phi-4-mini-instruct: CONDITIONAL  (holds)
+  SmolLM3-3B:          CONDITIONAL  (holds)
 
-Consensus:  ROUTE
-Agreement:  0.67  (2-of-3 in Round 1, 3-of-3 by Round 2)
+Consensus:  CONDITIONAL
+Agreement:  0.67  (genuine 2/3 majority: 2 CONDITIONAL, 1 ROUTE)
 ```
-**Voiceover**: "For genuinely contested configs — MODERATE refusal-drift, mixed judge agreement — three small models argue it under a constitution. Qwen2.5-1.5B, 0.5B, SmolLM2-1.7B. One argues CONDITIONAL, two argue ROUTE. After rebuttal, consensus: ROUTE at 0.67 agreement. The debate is a cached replay; the live-run button activates when a GPU backend is wired."
+**Voiceover**: "For genuinely contested configs — MODERATE refusal-drift, mixed judge agreement — three small models argue it under a constitution. Qwen3-8B, Phi-4-mini, SmolLM3. Qwen3 opens with DEPLOY, then after the rebuttal round concedes all the way to ROUTE — you can watch a model change its mind. The other two hold CONDITIONAL, and the cohort reaches a genuine two-thirds consensus: CONDITIONAL — ship only behind a targeted safety probe. The debate is a cached replay; the live-run button activates when a GPU backend is wired."
 
 ---
 
@@ -136,9 +137,9 @@ QuantSafe Certifier
 
 Refusal Stability screen  →  45 cells, AUC 0.8445
 Live screen               →  real-time scoring, in-Space
-Judge Agreement           →  kappa 0.74, RELIABLE
+Judge Agreement           →  kappa 0.75, RELIABLE
 Safety Certificate        →  Ed25519, tamper-evident
-Constitutional Debate     →  3 small models, consensus ROUTE
+Constitutional Debate     →  3 small models, consensus CONDITIONAL
 
 Every model: <=9B.  Entire pipeline: <=32B.
 huggingface.co/spaces/Crusadersk/quantsafe-certifier
@@ -158,14 +159,14 @@ huggingface.co/spaces/Crusadersk/quantsafe-certifier
 | HIGH cells as share of configs | 9/45 = 20% | derived |
 | Gap recovery from routing HIGH cells | 76.17% | tr163_analysis.json → in_sample.high_band |
 | ROC AUC (LOOCV) | 0.8445 | tr163_analysis.json → out_of_sample_loocv.roc_auc |
-| Judge cohort size | ~17B (Llama-Guard-3-8B + ShieldGemma-9b) | model cards |
-| Corpus size | 40 prompts | judge_agreement corpus |
-| Judge agreement count | 36/40 | judge_agreement results |
-| Cohen's kappa | 0.74, RELIABLE | judge_agreement results |
-| Split cases | 4 | judge_agreement results |
-| Debate models | Qwen2.5-1.5B, Qwen2.5-0.5B, SmolLM2-1.7B | debate config |
+| Judge cohort size | ~16B (Qwen3Guard-Gen-8B + Granite-Guardian-3.3-8b) | model cards |
+| Corpus size | 40 prompts | judge_corpus.json |
+| Judge agreement count | 35/40 | judge_results.json |
+| Cohen's kappa | 0.7531, RELIABLE | judge_results.json |
+| Split cases | 5 | judge_results.json |
+| Debate models | Qwen3-8B, Phi-4-mini-instruct, SmolLM3-3B | debate config |
 | Debate config | MODERATE/MIXED (contested) | debate scenario |
-| Consensus | ROUTE | debate results |
-| Consensus agreement | 0.67 (rounds 1→2: 3-of-3 by Round 2) | debate results |
-| Largest single model in pipeline | 9B (ShieldGemma-9b) | model card |
+| Consensus | CONDITIONAL | debate_examples.json |
+| Consensus agreement | 0.67 (genuine 2/3 majority: 2 CONDITIONAL, 1 ROUTE) | debate_examples.json |
+| Largest single model in pipeline | 8.19B (Qwen3-8B / Qwen3Guard-Gen-8B) | model card |
 | Pipeline total (all models) | <=32B | derived |

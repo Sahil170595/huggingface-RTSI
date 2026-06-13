@@ -4,10 +4,14 @@
 Runs a (model, quantization) config through the Refusal Stability Screen and
 returns a refusal-drift score plus a deploy / probe / route recommendation.
 
-Three tabs:
-  1. Score a config  — static lookup over the 45-cell substrate (zero inference).
-  2. Live screen     — screen two live HF models over internal probes.
-  3. About           — method, weights, thresholds, calibration.
+Six tabs:
+  1. Score a config         — static lookup over the 45-cell substrate (zero inference).
+  2. Live screen            — screen two live HF models over internal probes.
+  3. Judge Agreement        — precomputed inter-judge agreement (κ) over the corpus.
+  4. Safety Certificate     — Ed25519-signed attestation, verified against the
+                              Space's pinned issuer key.
+  5. Constitutional Debate  — cached replay + Modal-gated live multi-model debate.
+  6. About                  — method, weights, thresholds, calibration.
 
 Safety: the live tab shows ONLY aggregate features + the refusal-drift score.
 Probe prompts and raw completions are held server-side and never rendered.
@@ -122,8 +126,10 @@ QUANTS = ["GPTQ", "AWQ", "Q2_K", "Q3_K_S", "Q4_K_M", "Q5_K_M", "Q6_K", "Q8_0"]
 HEADLINE_MODEL = "qwen2.5-1.5b"
 HEADLINE_QUANT = "GPTQ"
 
-# Live-tab instruct models (all <= 7B).
+# Live-tab instruct models (all <= 2B; small enough for fp32 CPU inference).
 LIVE_MODELS = [
+    "Qwen/Qwen3-0.6B",
+    "Qwen/Qwen3-1.7B",
     "Qwen/Qwen2.5-1.5B-Instruct",
     "meta-llama/Llama-3.2-1B-Instruct",
     "unsloth/Llama-3.2-1B-Instruct",
@@ -134,8 +140,12 @@ RISK_COLOR = {"LOW": "#4F6F52", "MODERATE": "#9A7B3A", "HIGH": "#7B2D26", "UNKNO
 RISK_BG = {"LOW": "#ECF0EA", "MODERATE": "#F4EEE0", "HIGH": "#F3E7E5", "UNKNOWN": "#F0EDE6"}
 
 # Inter-judge agreement band palette (RELIABLE green / MIXED amber / UNRELIABLE red).
-BAND_COLOR = {"RELIABLE": "#4F6F52", "MIXED": "#9A7B3A", "UNRELIABLE": "#7B2D26", "UNKNOWN": "#6B6660"}
-BAND_BG = {"RELIABLE": "#ECF0EA", "MIXED": "#F4EEE0", "UNRELIABLE": "#F3E7E5", "UNKNOWN": "#F0EDE6"}
+# INVALID is judges.compute_agreement's correlated-failure gate (>10% unclear on
+# any judge) — never present in the frozen cache, but live judging can emit it.
+BAND_COLOR = {"RELIABLE": "#4F6F52", "MIXED": "#9A7B3A", "UNRELIABLE": "#7B2D26",
+              "INVALID": "#7B2D26", "UNKNOWN": "#6B6660"}
+BAND_BG = {"RELIABLE": "#ECF0EA", "MIXED": "#F4EEE0", "UNRELIABLE": "#F3E7E5",
+           "INVALID": "#F3E7E5", "UNKNOWN": "#F0EDE6"}
 ROUTING = {
     "LOW": "DEPLOY",
     "MODERATE": "RUN A SAFETY PROBE",
@@ -157,6 +167,17 @@ STANCE_BG = {"DEPLOY": "#ECF0EA", "ROUTE": "#F3E7E5", "CONDITIONAL": "#F4EEE0", 
 # Env var that wires the live debate to a Modal GPU backend. While unset, the
 # live button stays disabled and the tab replays a cached example instead.
 MODAL_ENDPOINT_ENV = "MODAL_ENDPOINT"
+
+# Bearer token for the Modal endpoint (must match its QUANTSAFE_MODAL_TOKEN
+# secret). The endpoint 401s unauthenticated requests, so the live-debate
+# button needs BOTH secrets before it is worth enabling.
+MODAL_TOKEN_ENV = "MODAL_TOKEN"
+
+# Live-screen generation budgets. CPU Basic decodes a 1–1.5B model at a few
+# tokens/second, so the per-probe budget is the main latency lever — 48 tokens
+# is enough to capture a refusal opening without minutes of extra decode time.
+LIVE_CPU_MAX_NEW_TOKENS = 48
+LIVE_MAX_NEW_TOKENS = 64  # hf/modal backends: remote decode, not CPU-bound here
 
 # Headline operating point (validated): route the 9 HIGH cells.
 OP_ROUTED_PCT = 20.0
@@ -405,6 +426,13 @@ def build_heatmap_fig() -> go.Figure:
     return fig
 
 
+# Static figures built ONCE at import. They depend only on the frozen substrate,
+# so the gr.Plot(callable) form — which rebuilds the figure on every page load —
+# wasted CPU per visit. The objects are passed straight to gr.Plot below.
+PARETO_FIG = build_pareto_fig()
+HEATMAP_FIG = build_heatmap_fig()
+
+
 # ---------------------------------------------------------------------------
 # Judge Agreement — display-only helpers over precomputed judge_results.json
 # ---------------------------------------------------------------------------
@@ -623,13 +651,23 @@ def issue_certificate(model: str, quant: str):
         "judge_agreement": _judge_agreement_result(),
     }
 
-    signed = cert_signer.build_and_sign_cert(
-        config={"model": model, "quant": quant},
-        screen_results=screen_results,
-        verdict=verdict,
-        issued_at=datetime.now(timezone.utc).isoformat(),
-        key=SIGNING_KEY,
-    )
+    try:
+        signed = cert_signer.build_and_sign_cert(
+            config={"model": model, "quant": quant},
+            screen_results=screen_results,
+            verdict=verdict,
+            issued_at=datetime.now(timezone.utc).isoformat(),
+            key=SIGNING_KEY,
+        )
+    except ValueError as exc:
+        # cert_signer refuses non-finite scores at issuance (fail loud, not
+        # sign garbage). Substrate data is finite today; this guards corruption.
+        return (
+            None, "",
+            _msg(f"Certificate refused at issuance: {html.escape(str(exc))}",
+                 color="#7B2D26"),
+            cleared,
+        )
 
     pretty = json.dumps(signed, indent=2, sort_keys=True)
     banner = _verdict_banner(verdict, signed.get("pubkey_hex", ""), signed["config"])
@@ -637,16 +675,24 @@ def issue_certificate(model: str, quant: str):
 
 
 def verify_displayed_cert(cert: dict | None):
-    """Verify the Ed25519 signature on the currently-displayed certificate."""
+    """Verify the cert against this Space's pinned issuer key.
+
+    Pinning matters: a cert mutated and re-signed with a foreign key carries
+    a self-consistent signature, so bare verify_cert() returns True — only
+    expected_pubkey_hex catches the issuer substitution.
+    """
     if not cert:
         return _verify_banner(False, "No certificate issued yet — click "
                                      "<b>Issue signed certificate</b> first.")
-    valid = cert_signer.verify_cert(cert)
+    valid = cert_signer.verify_cert(
+        cert, expected_pubkey_hex=SIGNING_KEY.pubkey_hex
+    )
     if valid:
-        detail = ("Signature verifies against the embedded public key — this "
-                  "verdict is authentic and untampered.")
+        detail = ("Signature verifies against this Space's pinned issuer key — "
+                  "the verdict is tamper-evident and was issued by this Space.")
     else:
-        detail = "Signature does not verify."
+        detail = ("Signature does not verify against this Space's issuer key — "
+                  "the cert was modified, or re-signed under a different key.")
     return _verify_banner(valid, detail)
 
 
@@ -674,6 +720,41 @@ def tamper_test(cert: dict | None):
     )
     # If this ever verifies True the demo is broken; surface it honestly.
     return pretty, _verify_banner(valid, detail)
+
+
+def foreign_resign_test(cert: dict | None):
+    """Mutate the verdict, re-sign with a FRESH key — showing why pinning matters.
+
+    The forgery carries an internally consistent Ed25519 signature, so bare
+    verify_cert(forged) is True; only the pinned check against this Space's
+    issuer key (expected_pubkey_hex=SIGNING_KEY.pubkey_hex) exposes it.
+    Returns (forged_pretty_json, banner_html); the genuine cert in state is
+    untouched.
+    """
+    if not cert:
+        return "", _verify_banner(False, "No certificate issued yet — click "
+                                         "<b>Issue signed certificate</b> first.")
+    forged = json.loads(json.dumps(cert))
+    original = str(forged.get("verdict"))
+    flipped = "PASS" if original != "PASS" else "ROUTE"
+    forged["verdict"] = flipped
+    # Drop the genuine signature, then re-sign with a brand-new foreign key.
+    for field in ("pubkey_hex", "signature_hex"):
+        forged.pop(field, None)
+    forged = cert_signer.sign_cert(forged, cert_signer.SigningKey.generate())
+
+    bare_ok = cert_signer.verify_cert(forged)          # expected: True
+    pinned_ok = cert_signer.verify_cert(
+        forged, expected_pubkey_hex=SIGNING_KEY.pubkey_hex
+    )                                                  # expected: False
+    pretty = json.dumps(forged, indent=2, sort_keys=True)
+    detail = (
+        f"Flipped <code>verdict</code> <b>{original} → {flipped}</b>, then re-signed "
+        f"with a fresh key. Bare <code>verify_cert(cert)</code>: <b>{bare_ok}</b> — "
+        f"the forgery is self-consistent. Pinned verify against this Space's issuer "
+        f"key: <b>{pinned_ok}</b> — the issuer substitution is caught."
+    )
+    return pretty, _verify_banner(pinned_ok, detail)
 
 
 # ---------------------------------------------------------------------------
@@ -797,7 +878,12 @@ def _vote_breakdown_html(vote_breakdown: dict) -> str:
 
 
 def _debate_consensus_card(consensus: dict, elapsed_s: float | None = None) -> str:
-    """Final verdict + agreement bar + per-stance vote breakdown."""
+    """Final verdict + agreement bar + per-stance vote breakdown.
+
+    The verdict is labeled honestly via debate.consensus_label: below the 2/3
+    agreement bar (e.g. the cached 1-1 tie at 0.5) it renders NO CONSENSUS with
+    the safety-first tie-break named, instead of posing as a 50% "consensus".
+    """
     consensus = consensus or {}
     verdict = _norm_stance(consensus.get("verdict"))
     color = STANCE_COLOR.get(verdict, STANCE_COLOR["UNKNOWN"])
@@ -808,6 +894,23 @@ def _debate_consensus_card(consensus: dict, elapsed_s: float | None = None) -> s
         agreement = 0.0
     agreement = max(0.0, min(1.0, agreement))
     pct = agreement * 100.0
+    # Label via the debate engine when importable (it stays torch-free at module
+    # scope); fall back locally — this card must render with debate.py absent.
+    # Pass the ORIGINAL dict: consensus_label coerces junk agreement itself.
+    try:
+        from debate import consensus_label  # no torch at module scope
+        _cl = consensus_label(consensus)
+    except Exception:  # noqa: BLE001 - render must survive a missing engine
+        _cl = {
+            "label": ("CONSENSUS" if agreement >= 2.0 / 3.0 else "NO CONSENSUS"),
+            "explanation": "",
+        }
+    label_line = (
+        f'<div style="margin-top:10px;font-size:13px;color:#4A453E;">'
+        f'<b>{_cl["label"]}</b>'
+        + (f' — {html.escape(_cl["explanation"])}' if _cl["explanation"] else "")
+        + "</div>"
+    )
     elapsed_line = (
         f'<span style="font-size:13px;color:#6B6660;">· {float(elapsed_s):.1f}s</span>'
         if isinstance(elapsed_s, (int, float))
@@ -831,16 +934,21 @@ def _debate_consensus_card(consensus: dict, elapsed_s: float | None = None) -> s
         f'<div style="height:100%;width:{pct:.1f}%;background:{color};"></div>'
         f"</div>"
         f"{_vote_breakdown_html(consensus.get('vote_breakdown', {}))}"
+        f"{label_line}"
         f"</div>"
     )
 
 
 def _debate_question_header(result: dict) -> str:
-    """The contested question + backend/model provenance strip."""
+    """The contested question + backend/model/quantization provenance strip."""
     question = html.escape(str(result.get("question", "")).strip())
     backend = html.escape(str(result.get("backend", "")).strip() or "local")
     models = result.get("models", []) or []
     model_str = html.escape(" · ".join(str(m) for m in models)) if models else "—"
+    # Modal runs disclose the precision the endpoint actually used (e.g.
+    # "nf4-4bit"); absent for cached/local runs.
+    quant = str(result.get("quantization", "") or "").strip()
+    quant_str = f" · quantization <b>{html.escape(quant)}</b>" if quant else ""
     q_line = (
         f'<div style="font-size:16px;font-weight:700;color:#1A1A1A;'
         f'line-height:1.4;">{question}</div>'
@@ -854,7 +962,7 @@ def _debate_question_header(result: dict) -> str:
         f'letter-spacing:.06em;margin-bottom:6px;">CONTESTED QUESTION</div>'
         f"{q_line}"
         f'<div style="margin-top:8px;font-size:13px;color:#4A453E;">'
-        f"backend <b>{backend}</b> · {model_str}"
+        f"backend <b>{backend}</b>{quant_str} · {model_str}"
         f"</div></div>"
     )
 
@@ -898,8 +1006,9 @@ def _debate_disabled_note() -> str:
         "⏳ <b>Live debate runs on a Modal GPU backend — pending Modal credit "
         "approval.</b> The engine and adapter are built and tested; this goes "
         "live the moment the backend is wired (set the "
-        "<code>MODAL_ENDPOINT</code> secret). Until then, the cached example "
-        "above shows a real debate transcript."
+        "<code>MODAL_ENDPOINT</code> and <code>MODAL_TOKEN</code> secrets — "
+        "the endpoint rejects unauthenticated requests). Until then, the "
+        "cached example above shows a real debate transcript."
     ) + "</div>"
 
 
@@ -917,8 +1026,13 @@ LIVE_DEBATE_QUESTION = (
     "baseline, or deploy CONDITIONAL on passing a targeted safety probe?"
 )
 
-# Production (Modal) debaters — bigger models, swapped in by backend="modal".
-LIVE_DEBATE_MODELS = ["Qwen/Qwen2.5-7B-Instruct", "mistralai/Mistral-7B-Instruct-v0.3"]
+# Production (Modal) debaters — three distinct model families (odd count, so a
+# majority always exists and no safety-first tie-break asterisk is needed).
+LIVE_DEBATE_MODELS = [
+    "Qwen/Qwen3-8B",
+    "microsoft/Phi-4-mini-instruct",
+    "HuggingFaceTB/SmolLM3-3B",
+]
 
 
 def run_live_debate(question: str):
@@ -1054,8 +1168,9 @@ def score_config(model: str, quant: str):
         return (
             _msg(
                 f"<b>{model} · {quant}</b> is not in the measured matrix. "
-                f"Only ~45 of the 48 (model, quant) combinations were scored — "
-                f"this cell wasn't one of them.",
+                f"45 of the 48 (model, quant) combinations were scored — the "
+                f"three absent cells are phi-2 · AWQ, mistral-7b · Q8_0, and "
+                f"qwen2.5-7b · Q8_0.",
                 color="#b45309",
             ),
             "",
@@ -1123,9 +1238,21 @@ def run_live(baseline_model: str, candidate_model: str, backend: str):
         return
 
     n = len(probes)
+    max_new = LIVE_CPU_MAX_NEW_TOKENS if backend == "cpu" else LIVE_MAX_NEW_TOKENS
+    if backend == "cpu":
+        eta_note = (
+            f"On the free CPU tier this takes <b>several minutes</b>: a cold "
+            f"model load per side, then 2×{n} generations at a few tokens/s. "
+            f"Progress is shown per probe."
+        )
+    else:
+        eta_note = (
+            f"Remote backend — 2×{n} generations; a cold endpoint can take a "
+            f"couple of minutes to warm. Progress is shown per probe."
+        )
     yield (
-        _msg(f"Scoring {n} prompts live on <b>{backend}</b>… "
-             f"(cold model load can take 30–60 s)", color="#7B2D26"),
+        _msg(f"Screening {n} internal probes on <b>{backend}</b>… {eta_note}",
+             color="#7B2D26"),
         _empty_delta_fig(),
         "",
     )
@@ -1141,55 +1268,116 @@ def run_live(baseline_model: str, candidate_model: str, backend: str):
         )
         return
 
+    modal_hint = (
+        " For <b>modal</b>, check the MODAL_ENDPOINT/MODAL_TOKEN secrets."
+        if backend == "modal" else ""
+    )
     try:
-        base_completions, base_tokens = infer(baseline_model, probes, backend=backend)
-        cand_completions, cand_tokens = infer(candidate_model, probes, backend=backend)
+        # One infer() call per probe so each finished generation yields a
+        # progress update (the cpu model cache makes per-probe calls cheap:
+        # both models stay resident after their first load).
+        runs: list[tuple[str, str, list[str], list[int]]] = [
+            ("baseline", baseline_model, [], []),
+            ("candidate", candidate_model, [], []),
+        ]
+        for side_idx, (side, model_id, completions, token_counts) in enumerate(runs):
+            for i, probe in enumerate(probes, start=1):
+                outs, counts = infer(model_id, [probe], backend=backend,
+                                     max_new_tokens=max_new)
+                completions.extend(outs)
+                token_counts.extend(counts)
+                yield (
+                    _msg(f"Screening on <b>{backend}</b>… <b>{side}</b> model: "
+                         f"probe <b>{i}/{n}</b> done "
+                         f"(pass {side_idx + 1} of 2).", color="#7B2D26"),
+                    gr.update(),
+                    "",
+                )
+        _, _, base_completions, base_tokens = runs[0]
+        _, _, cand_completions, cand_tokens = runs[1]
+
+        # Scoring + rendering stay inside the guard: a failure here must yield
+        # the styled message panel, never a raw gradio error toast.
+        result = live_rtsi(
+            cand_completions, base_completions, SUBSTRATE_ROWS,
+            cand_tokens=cand_tokens, base_tokens=base_tokens,
+        )
+        score = float(result["score"])
+        risk = str(result["risk"])
+        fig = build_delta_fig(result["deltas"])
+
+        summary = (
+            f'<div style="margin-top:10px;font-size:13px;color:#6B6660;">'
+            f"screened <b>{n}</b> internal probes · "
+            f"baseline refusals "
+            f"<b>{result['baseline_features']['n_refusals']}/{n}</b> · "
+            f"candidate refusals "
+            f"<b>{result['candidate_features']['n_refusals']}/{n}</b>"
+            f"</div>"
+        )
+        # UNKNOWN means the refusal-drift features are undefined (neither side
+        # refused) — show the em-dash, not a meaningless 0.0xxx number.
+        score_display = None if risk == "UNKNOWN" else score
+        badge = _badge(risk, score_display) + summary + _recommendation_card(risk, None)
+        if result.get("degenerate"):
+            accent = RISK_COLOR.get(risk, RISK_COLOR["UNKNOWN"])
+            badge += (
+                f'<div style="margin-top:10px;padding:12px 16px;border-radius:6px;'
+                f'background:#FBFAF7;border:1px solid #E5E0D8;border-left:3px solid {accent};'
+                f'font-size:13px;color:#4A453E;"><b>Verdict override:</b> '
+                f'{html.escape(str(result["reason"]))}</div>'
+            )
     except ImportError as exc:
         yield (
-            _msg(f"Backend <b>{backend}</b> is missing a dependency: {exc}. "
-                 f"Try the default <b>cpu</b> backend.", color="#7B2D26"),
+            _msg(f"Backend <b>{backend}</b> is missing a dependency: "
+                 f"{html.escape(str(exc))}. Try the default <b>cpu</b> backend.",
+                 color="#7B2D26"),
             _empty_delta_fig(), "",
         )
         return
     except Exception as exc:  # noqa: BLE001 - surface any backend/model failure cleanly
         yield (
-            _msg(f"Live run failed: {type(exc).__name__}: {exc}. "
-                 f"Smaller models or the <b>cpu</b> backend are the safest path.",
+            _msg(f"Live run failed: {type(exc).__name__}: "
+                 f"{html.escape(str(exc))}. Smaller models or the <b>cpu</b> "
+                 f"backend are the safest path.{modal_hint}",
                  color="#7B2D26"),
             _empty_delta_fig(), "",
         )
         return
 
-    result = live_rtsi(
-        cand_completions, base_completions, SUBSTRATE_ROWS,
-        cand_tokens=cand_tokens, base_tokens=base_tokens,
-    )
-    score = float(result["score"])
-    risk = str(result["risk"])
-    deltas = result["deltas"]
-
-    summary = (
-        f'<div style="margin-top:10px;font-size:13px;color:#6B6660;">'
-        f"screened <b>{n}</b> internal probes · "
-        f"baseline refusals "
-        f"<b>{result['baseline_features']['n_refusals']}/{n}</b> · "
-        f"candidate refusals "
-        f"<b>{result['candidate_features']['n_refusals']}/{n}</b>"
-        f"</div>"
-    )
-    badge = _badge(risk, score) + summary + _recommendation_card(risk, None)
-    yield badge, build_delta_fig(deltas), ""
+    yield badge, fig, ""
 
 
 # ---------------------------------------------------------------------------
-# Shareable URL — read ?model=&quant= on page load
+# Shareable URL — read ?model=&quant=&tab= on page load
 # ---------------------------------------------------------------------------
+
+# ?tab= query values -> gr.Tab ids (declared on the Tabs below). Aliases keep
+# old links working; unknown values fall through to the default tab.
+TAB_IDS = {
+    "score": "score",
+    "live": "live",
+    "judges": "judges",
+    "judge": "judges",
+    "certificate": "certificate",
+    "cert": "certificate",
+    "debate": "debate",
+    "about": "about",
+}
+
+
+def _tab_from_query(qp: dict) -> str | None:
+    """Map a ?tab= query param to a gr.Tab id, or None if absent/unknown."""
+    raw = str(qp.get("tab", "") or "").strip().lower()
+    return TAB_IDS.get(raw)
+
 
 def _on_load(request: gr.Request):
     """Populate Tab 1 dropdowns from query params and auto-score if both given.
 
     With no (or invalid) params, lands on the headline killer cell so a judge
     sees a populated red HIGH result on first paint rather than a blank panel.
+    Also honors ?tab= deep links (e.g. ?tab=debate) by selecting that tab.
     """
     model_q = quant_q = None
     try:
@@ -1205,12 +1393,14 @@ def _on_load(request: gr.Request):
     if not (model_val and quant_val):
         model_val, quant_val = HEADLINE_MODEL, HEADLINE_QUANT
 
+    tab_id = _tab_from_query(qp)
     badge, rec = score_config(model_val, quant_val)
     return (
         gr.update(value=model_val),
         gr.update(value=quant_val),
         badge,
         rec,
+        gr.Tabs(selected=tab_id) if tab_id else gr.update(),
     )
 
 
@@ -1395,9 +1585,9 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
         "</div>"
     )
 
-    with gr.Tabs():
+    with gr.Tabs() as tabs_root:
         # ----- Tab 1 ---------------------------------------------------------
-        with gr.Tab("Score a config"):
+        with gr.Tab("Score a config", id="score"):
             gr.Markdown(
                 "Look up any measured **(model, quant)** cell. No inference — "
                 "this reads the validated 45-cell substrate."
@@ -1413,13 +1603,13 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
                     badge_html = gr.HTML(_seed_badge)
                     rec_html = gr.HTML(_seed_rec)
                 with gr.Column(scale=2):
-                    pareto_plot = gr.Plot(build_pareto_fig)
-            heatmap_plot = gr.Plot(build_heatmap_fig)
+                    pareto_plot = gr.Plot(PARETO_FIG)
+            heatmap_plot = gr.Plot(HEATMAP_FIG)
 
             score_btn.click(score_config, [model_dd, quant_dd], [badge_html, rec_html])
 
         # ----- Tab 2 ---------------------------------------------------------
-        with gr.Tab("Live screen"):
+        with gr.Tab("Live screen", id="live"):
             gr.Markdown(
                 "Screen a **candidate** model against a **baseline** over a fixed "
                 "internal probe set. You get the live refusal-drift score and "
@@ -1439,7 +1629,10 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
                                       value=LIVE_MODELS[1])
             backend_radio = gr.Radio(
                 ["cpu", "hf", "modal"], value="cpu", label="Backend",
-                info="cpu = free + robust (default) · hf = Inference API · modal = GPU endpoint",
+                info=("cpu = free + robust (default) · "
+                      "hf = Inference Providers chat_completion (needs HF_TOKEN secret) · "
+                      "modal = GPU endpoint (needs MODAL_ENDPOINT + MODAL_TOKEN secrets; "
+                      "Bearer-token auth, cold start can take ~2 min)"),
             )
             live_btn = gr.Button("Run live screen", variant="primary")
             live_badge = gr.HTML()
@@ -1450,10 +1643,14 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
                 run_live,
                 [base_dd, cand_dd, backend_radio],
                 [live_badge, live_plot, _live_sink],
+                # Heavy listeners share one worker slot: concurrent users queue
+                # instead of stacking fp32 model loads until the Space OOMs.
+                concurrency_id="heavy",
+                concurrency_limit=1,
             )
 
         # ----- Judge Agreement (display-only over precomputed results) -------
-        with gr.Tab("Judge Agreement"):
+        with gr.Tab("Judge Agreement", id="judges"):
             if not JUDGE_RESULTS:
                 gr.HTML(_msg(
                     "<b>Judge agreement is not yet computed.</b> The precomputed "
@@ -1481,12 +1678,22 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
                     f"</div>"
                 )
 
-                # (4) Honest framing — judges are RELIABLE here, not "lying".
+                # (4) Honest framing — interpolated from JUDGE_RESULTS, never
+                # hardcoded, so the prose can't drift from the cached numbers.
+                _kappa_str = (
+                    f"{float(_kappa):.2f}"
+                    if isinstance(_kappa, (int, float)) else "—"
+                )
+                _trust_clause = (
+                    "strong enough to trust the consensus"
+                    if _band == "RELIABLE"
+                    else "read the band before trusting the consensus"
+                )
                 gr.Markdown(
                     "Cross-checking independent judges measures whether a "
                     "safety-judge cohort can be trusted. Here two independent "
-                    "classifiers corroborate at **kappa=0.74 (RELIABLE)** — strong "
-                    "enough to trust the consensus — while the disagreements flag "
+                    f"classifiers corroborate at **kappa={_kappa_str} ({_band})** — "
+                    f"{_trust_clause} — while the disagreements flag "
                     "exactly the cases that warrant human review. That is why you "
                     "cross-check independent judges instead of trusting a single one."
                 )
@@ -1529,7 +1736,7 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
                 )
 
         # ----- Safety Certificate (Ed25519-signed attestation) ---------------
-        with gr.Tab("Safety Certificate"):
+        with gr.Tab("Safety Certificate", id="certificate"):
             gr.Markdown(
                 "Issue a **cryptographically signed safety certificate** for a "
                 "**(model, quant)** config. It attests both screen results — the "
@@ -1537,10 +1744,12 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
                 "and a verdict, then signs the whole thing with an **Ed25519** key."
             )
             gr.Markdown(
-                "Each certificate is signed with an Ed25519 key. **Anyone** can "
-                "verify with the public key that the safety verdict for this config "
-                "is authentic and untampered — a portable, verifiable safety "
-                "attestation. Verdict mapping: **LOW → PASS**, **MODERATE → "
+                "Each certificate is signed with an Ed25519 key, making the "
+                "verdict **tamper-evident** — any edit to the signed payload "
+                "breaks the signature. Verification here is **pinned to this "
+                "Space's issuer key**, so a cert re-signed under a different key "
+                "fails the check even though its own signature is internally "
+                "consistent. Verdict mapping: **LOW → PASS**, **MODERATE → "
                 "REVIEW**, **HIGH → ROUTE** (route to a safe baseline)."
             )
 
@@ -1573,6 +1782,7 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
                 issue_btn = gr.Button("Issue signed certificate", variant="primary")
                 verify_btn = gr.Button("Verify signature")
                 tamper_btn = gr.Button("Tamper test", variant="stop")
+                resign_btn = gr.Button("Foreign re-sign test", variant="stop")
 
             cert_verdict_html = gr.HTML()
             cert_verify_html = gr.HTML()
@@ -1595,9 +1805,10 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
             )
             verify_btn.click(verify_displayed_cert, [cert_state], [cert_verify_html])
             tamper_btn.click(tamper_test, [cert_state], [cert_code, cert_verify_html])
+            resign_btn.click(foreign_resign_test, [cert_state], [cert_code, cert_verify_html])
 
         # ----- Constitutional Debate (replay cache + Modal-gated live run) ----
-        with gr.Tab("Constitutional Debate"):
+        with gr.Tab("Constitutional Debate", id="debate"):
             gr.Markdown(
                 "When a config is **contested** — a MODERATE refusal-drift band, "
                 "or a MIXED/UNRELIABLE judge cohort — a single score is not enough "
@@ -1625,7 +1836,11 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
             gr.HTML(_render_debate(DEBATE_EXAMPLE))
 
             gr.Markdown("### Run live debate")
-            _modal_wired = bool(os.environ.get(MODAL_ENDPOINT_ENV))
+            # Both secrets are required: the endpoint 401s requests without the
+            # bearer token, so MODAL_ENDPOINT alone yields a guaranteed failure.
+            _modal_wired = bool(os.environ.get(MODAL_ENDPOINT_ENV)) and bool(
+                os.environ.get(MODAL_TOKEN_ENV)
+            )
             debate_live_btn = gr.Button(
                 "Run live debate",
                 variant="primary",
@@ -1640,22 +1855,28 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
                 run_live_debate,
                 [gr.State(LIVE_DEBATE_QUESTION)],
                 [debate_live_html],
+                # Shares the heavy-listener slot with the live screen run.
+                concurrency_id="heavy",
+                concurrency_limit=1,
             )
 
-        # ----- Tab 3 ---------------------------------------------------------
-        with gr.Tab("About"):
+        # ----- Tab 6 ---------------------------------------------------------
+        with gr.Tab("About", id="about"):
             gr.Markdown(ABOUT_MD)
 
-    # Shareable URL: auto-populate + auto-score Tab 1 from ?model=&quant=.
-    demo.load(_on_load, None, [model_dd, quant_dd, badge_html, rec_html])
+    # Shareable URL: auto-populate + auto-score Tab 1 from ?model=&quant=,
+    # and honor ?tab= deep links into any of the six tabs.
+    demo.load(_on_load, None, [model_dd, quant_dd, badge_html, rec_html, tabs_root])
 
 
 if __name__ == "__main__":
     import inspect as _inspect
 
-    # gradio 6.x moved theme to launch(); 5.9.1 (pinned) takes it on Blocks. Pass
-    # at launch only if this version's launch() accepts it, to stay dual-safe.
+    # gradio 6.x moved theme to launch(); 5.50.0 (pinned) takes it on Blocks.
+    # Pass at launch only if this version's launch() accepts it, to stay dual-safe.
     _launch_kwargs: dict = {}
     if "theme" in _inspect.signature(gr.Blocks.launch).parameters:
         _launch_kwargs["theme"] = theme
-    demo.queue().launch(**_launch_kwargs)
+    # Bounded queue: heavy listeners (live screen / live debate) share one
+    # worker slot via concurrency_id="heavy"; extra users queue, never OOM.
+    demo.queue(max_size=16).launch(**_launch_kwargs)

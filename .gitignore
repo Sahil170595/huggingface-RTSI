@@ -1,12 +1,16 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.benchmarks/
+.claude/
 _applog.txt
 .venv/
 .env
+.modal_token_local.txt
 .DS_Store
 # HF / transformers caches
 .cache/
 ~/.cache/huggingface/
 transformers_cache/
 hf_cache/
+.cert_key_local.txt

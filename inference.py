@@ -2,8 +2,15 @@
 
 Three backends:
   "cpu"    transformers AutoModelForCausalLM on CPU (default, no ext deps at import time)
-  "hf"     huggingface_hub InferenceClient (requires HF_TOKEN env var)
-  "modal"  HTTP POST to a Modal GPU endpoint (requires MODAL_ENDPOINT env var)
+  "hf"     huggingface_hub InferenceClient.chat_completion (set HF_TOKEN for
+           provider routing / rate limits)
+  "modal"  HTTP POST to a Modal GPU endpoint (requires MODAL_ENDPOINT; sends
+           "Authorization: Bearer <MODAL_TOKEN>" when MODAL_TOKEN is set)
+
+Modal endpoint contract (mirrors modal_app.py):
+  Request  JSON: {"model": "<hf_model_id>", "prompt": "<text>", "max_new_tokens": N}
+  Response JSON: {"text": "<completion>", "quantization": "<precision>"}
+  Errors:  non-2xx with a FastAPI {"detail": "<message>"} body -> RuntimeError here.
 
 Usage:
     from inference import infer
@@ -13,28 +20,67 @@ Usage:
 from __future__ import annotations
 
 import os
+import threading
 
 # ---------------------------------------------------------------------------
-# CPU backend — lazy-load cache
+# CPU backend — lazy-load LRU cache, bounded so fp32 weights can't OOM the
+# 16 GB CPU Basic Space. At most the CURRENT run's (baseline, candidate) pair
+# stays resident; older models are deleted and garbage-collected first.
 # ---------------------------------------------------------------------------
 
-_cpu_cache: dict[str, tuple] = {}  # model_id -> (tokenizer, model)
+#: Maximum number of CPU models held in memory at once. A live screen loads
+#: exactly two (baseline + candidate); keep the pair, evict everything older.
+MAX_CACHED_CPU_MODELS: int = 2
+
+_cpu_cache: dict[str, tuple] = {}  # model_id -> (tokenizer, model); insertion order == LRU order
+_cpu_cache_lock = threading.Lock()
 
 
-def _load_cpu(model_id: str):
-    if model_id in _cpu_cache:
-        return _cpu_cache[model_id]
+def _load_cpu_model(model_id: str) -> tuple:
+    """Actually download + instantiate (tokenizer, model) on CPU.
+
+    Split out of :func:`_load_cpu` so tests can stub the heavyweight load
+    while still exercising the real cache/eviction logic.
+    """
     from transformers import AutoModelForCausalLM, AutoTokenizer  # lazy import
     import torch
     tok = AutoTokenizer.from_pretrained(model_id)
     mdl = AutoModelForCausalLM.from_pretrained(
         model_id,
+        # Keep float32 on CPU for the 1-1.5B live models: it is the numerically
+        # safe default and fits comfortably once the cache is bounded. Do NOT
+        # switch dtype silently — drift numbers must stay comparable.
         torch_dtype=torch.float32,
         device_map="cpu",
     )
     mdl.eval()
-    _cpu_cache[model_id] = (tok, mdl)
     return tok, mdl
+
+
+def _load_cpu(model_id: str) -> tuple:
+    """Return a cached (tokenizer, model) pair, loading + evicting as needed.
+
+    Thread-safe: Gradio can fire concurrent live runs, and loading the same
+    fp32 model twice in parallel would double peak memory.
+    """
+    import gc
+    with _cpu_cache_lock:
+        if model_id in _cpu_cache:
+            # Refresh LRU position so the current run's pair survives eviction.
+            _cpu_cache[model_id] = _cpu_cache.pop(model_id)
+            return _cpu_cache[model_id]
+        # Evict oldest entries BEFORE loading so peak residency never exceeds
+        # MAX_CACHED_CPU_MODELS models.
+        evicted = False
+        while len(_cpu_cache) >= MAX_CACHED_CPU_MODELS:
+            oldest_id = next(iter(_cpu_cache))
+            del _cpu_cache[oldest_id]
+            evicted = True
+        if evicted:
+            gc.collect()  # release evicted fp32 weights before the next download
+        tok, mdl = _load_cpu_model(model_id)
+        _cpu_cache[model_id] = (tok, mdl)
+        return tok, mdl
 
 
 def _infer_cpu(
@@ -48,20 +94,36 @@ def _infer_cpu(
     token_counts: list[int] = []
     for prompt in prompts:
         # Apply chat template when available so instruct models behave correctly.
+        # Tokenize ONCE inside apply_chat_template: rendering to a string and
+        # re-tokenizing with add_special_tokens=True double-inserts BOS on
+        # Llama-3.2 / Mistral. return_dict=True also yields the attention_mask
+        # so generate() never has to guess padding.
         if getattr(tok, "chat_template", None):
             messages = [{"role": "user", "content": prompt}]
-            enc_text = tok.apply_chat_template(
+            template_kwargs: dict = {}
+            mid = model_id.lower()
+            # Reasoning-mode suppression: at the live tab's small token budget
+            # a <think> preamble would consume the whole budget before any
+            # refusal text appears. Qwen3 exposes enable_thinking in its
+            # template; SmolLM3 reads a /no_think system flag. Templates that
+            # use neither ignore the extra context.
+            if "qwen3" in mid and "guard" not in mid:
+                template_kwargs["enable_thinking"] = False
+            if "smollm3" in mid:
+                messages = [{"role": "system", "content": "/no_think"}] + messages
+            enc = tok.apply_chat_template(
                 messages,
-                tokenize=False,
                 add_generation_prompt=True,
+                return_tensors="pt",
+                return_dict=True,
+                **template_kwargs,
             )
         else:
-            enc_text = prompt
-        input_ids = tok(enc_text, return_tensors="pt").input_ids
-        prompt_len = input_ids.shape[-1]
+            enc = tok(prompt, return_tensors="pt")
+        prompt_len = enc["input_ids"].shape[-1]
         with torch.no_grad():
             out_ids = mdl.generate(
-                input_ids,
+                **enc,  # input_ids + attention_mask
                 max_new_tokens=max_new_tokens,
                 do_sample=False,
                 pad_token_id=tok.eos_token_id,
@@ -95,21 +157,51 @@ def _infer_hf(
     completions: list[str] = []
     token_counts: list[int] = []
     for prompt in prompts:
-        result = client.text_generation(
-            prompt,
-            max_new_tokens=max_new_tokens,
-            return_full_text=False,
-        )
-        text = result if isinstance(result, str) else getattr(result, "generated_text", str(result))
+        # chat_completion applies the model's chat template server-side and
+        # reports real token usage — no hand-rolled prompts, no whitespace
+        # "token" counting.
+        try:
+            result = client.chat_completion(
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_new_tokens,
+            )
+            text = result.choices[0].message.content or ""
+            count = int(result.usage.completion_tokens)
+        except Exception as exc:
+            raise RuntimeError(
+                f"hf backend: provider call failed for {model_id!r}: {exc}. "
+                "Check that HF_TOKEN is set and the model is served by an "
+                "inference provider."
+            ) from exc
         completions.append(text)
-        # HF Inference API may not return token counts; approximate via whitespace split.
-        token_counts.append(len(text.split()))
+        token_counts.append(count)
     return completions, token_counts
 
 
 # ---------------------------------------------------------------------------
 # Modal GPU endpoint backend
 # ---------------------------------------------------------------------------
+
+#: Per-request timeout. A Modal cold start (download + load a 7B model) can
+#: exceed 120 s; 300 s matches the endpoint's own timeout budget.
+_MODAL_TIMEOUT_S: int = 300
+
+_count_tok_cache: dict[str, object] = {}  # model_id -> tokenizer (counting only)
+
+
+def _load_count_tokenizer(model_id: str):
+    """Load (and cache) the model's tokenizer for client-side token counting.
+
+    Split out of :func:`_infer_modal` so tests can stub it without ever
+    downloading a real tokenizer.
+    """
+    if model_id in _count_tok_cache:
+        return _count_tok_cache[model_id]
+    from transformers import AutoTokenizer  # lazy import
+    tok = AutoTokenizer.from_pretrained(model_id)
+    _count_tok_cache[model_id] = tok
+    return tok
+
 
 def _infer_modal(
     model_id: str,
@@ -129,11 +221,40 @@ def _infer_modal(
             "requests is required for backend='modal'. "
             "Install it with: pip install requests"
         ) from exc
-    payload = {"prompts": prompts, "max_new_tokens": max_new_tokens}
-    resp = requests.post(endpoint, json=payload, timeout=120)
-    resp.raise_for_status()
-    data = resp.json()
-    return data["completions"], data["token_counts"]
+    headers: dict[str, str] = {}
+    token = os.environ.get("MODAL_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    # The endpoint returns text only; count tokens client-side with the model's
+    # own tokenizer (loaded once per call) so counts stay comparable with the
+    # cpu backend's generated-token counts.
+    tok = _load_count_tokenizer(model_id)
+    completions: list[str] = []
+    token_counts: list[int] = []
+    for prompt in prompts:
+        payload = {
+            "model": model_id,
+            "prompt": prompt,
+            "max_new_tokens": max_new_tokens,
+        }
+        resp = requests.post(
+            endpoint, json=payload, headers=headers, timeout=_MODAL_TIMEOUT_S,
+        )
+        if not 200 <= resp.status_code < 300:
+            # FastAPI errors arrive as {"detail": "<message>"}; surface that
+            # message verbatim so the UI shows a clean error.
+            try:
+                detail = resp.json().get("detail") or resp.text
+            except Exception:
+                detail = resp.text
+            raise RuntimeError(
+                f"modal backend error (HTTP {resp.status_code}): {detail}"
+            )
+        data = resp.json()
+        text = str(data["text"])
+        completions.append(text)
+        token_counts.append(len(tok(text, add_special_tokens=False).input_ids))
+    return completions, token_counts
 
 
 # ---------------------------------------------------------------------------

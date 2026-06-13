@@ -51,6 +51,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import warnings
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
@@ -106,11 +107,20 @@ def compute_rtsi(
     Args:
         rows: list of dicts with the four feature-delta keys (signed deltas;
               the absolute value is normalized internally).
-        weights: optional override for per-feature weights; must sum to 1.
-                 Defaults to RTSI_WEIGHTS.
+        weights: optional override for per-feature weights; must be
+                 non-negative and sum to 1. Defaults to RTSI_WEIGHTS.
 
     Returns:
         list of RTSI scores in [0, 1], one per input row.
+
+    Raises:
+        ValueError: if weights are missing keys, do not sum to 1, or contain
+            negative values; or if any row lacks one of the RTSI_FEATURES keys.
+
+    Warns:
+        UserWarning: when fewer than 10 rows are supplied — min-max
+            normalization makes the scores batch-relative, so they are not
+            comparable to the calibrated LOW/MODERATE/HIGH thresholds.
     """
     if not rows:
         return []
@@ -120,6 +130,24 @@ def compute_rtsi(
         raise ValueError(f"weights missing keys: {missing}")
     if abs(sum(w.values()) - 1.0) > 1e-6:
         raise ValueError(f"weights must sum to 1.0, got {sum(w.values()):.6f}")
+    negative = [f for f, v in w.items() if v < 0]
+    if negative:
+        raise ValueError(f"weights must be non-negative, got negative values for: {negative}")
+
+    for i, row in enumerate(rows):
+        missing_feats = [f for f in RTSI_FEATURES if f not in row]
+        if missing_feats:
+            raise ValueError(f"row {i} is missing feature keys: {missing_feats}")
+
+    if len(rows) < 10:
+        warnings.warn(
+            f"compute_rtsi called with only {len(rows)} rows: min-max "
+            "normalization makes scores batch-relative, so they are NOT "
+            "comparable to the calibrated LOW/MODERATE/HIGH thresholds. "
+            "Score against the 45-row substrate for threshold-valid verdicts.",
+            UserWarning,
+            stacklevel=2,
+        )
 
     arr_per_feature = {
         f: np.array([float(r.get(f, 0.0)) for r in rows], dtype=np.float64)
