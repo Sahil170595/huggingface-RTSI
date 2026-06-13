@@ -58,9 +58,19 @@ Dating note: the reference matrix was measured on 2024-generation checkpoints; t
 - **Score a config** — look up any measured (model, quant) cell in the validated 45-cell substrate; the risk heatmap and Pareto routing curve render alongside.
 - **Live screen** — pick a baseline and a candidate model, run the internal refusal probe set, and get a live refusal-drift score plus feature deltas (CPU by default; `hf` / `modal` backends optional).
 - **Judge Agreement** — inter-judge agreement (Cohen's κ) between two small safety classifiers over a 40-prompt corpus, including the prompts where the judges split.
-- **Safety Certificate** — issue an Ed25519-signed certificate over the screen results; the built-in tamper test flips a field and shows the signature catching it.
+- **Safety Certificate** — issue an Ed25519-signed certificate over the screen results; the built-in tamper test flips a field and shows the signature catching it. Verification is pinned to this Space's published issuer key (below), so a certificate re-signed under a different key is rejected — a "foreign re-sign" demo button shows exactly that.
 - **Constitutional Debate** — small models argue "deploy or route" for a MODERATE config under a constitution; a cached replay works without any GPU.
 - **About** — methodology, the four features and their weights, and the validated headline numbers.
+
+## Certificate issuer key
+
+This Space's certificates are signed with a pinned Ed25519 key whose **public key is**:
+
+```
+9a074a15598fef26f5fbd33e8d604cb6c2372989f164331c11018a83fcd98519
+```
+
+The Verify button checks each certificate's signature against this published key, so a certificate forged or re-signed under any other key fails verification. The private key is held only as the Space secret `GRADIO_CERT_SIGNING_KEY_HEX`; if that secret is unset the Space falls back to an ephemeral per-restart key and prints its pubkey to the logs.
 
 ## Optional Modal GPU acceleration
 

@@ -35,7 +35,11 @@ IGNORE = [
     ".claude/*",
     ".pytest_cache/*",
     ".benchmarks/*",
+    # SECURITY: never upload local secret material to the public Space.
     ".modal_token_local.txt",
+    ".cert_key_local.txt",
+    ".env",
+    "*.pem",
     ".playwright-mcp/*",
     "_applog.txt",
     "*.log",
