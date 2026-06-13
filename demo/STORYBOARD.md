@@ -49,8 +49,9 @@ Decision:             Route to safe baseline
 Refusal-drift score:  0.03
 Risk band:            LOW
 Decision:             Safe to deploy
+Semantic cross-check: baseline 8/10 · candidate 8/10
 ```
-**Voiceover**: "The Live screen runs a small model right here — transformers, in the Space — and computes the same score in real time. No raw probe text is ever displayed."
+**Voiceover**: "The Live screen runs small models in real time, keeps the calibrated refusal-drift score intact, and cross-checks semantic refusal rates with our fine-tuned 149-million-parameter ModernBERT. No raw probe text is ever displayed."
 **Text overlay** (cut to static summary panel):
 ```
 45 measured cells   ·   23 LOW / 13 MODERATE / 9 HIGH
@@ -67,9 +68,9 @@ ROC AUC = 0.8445  (leave-one-cell-out, 45 cells)
 **Screen**: Switch to "Judge Agreement" tab.
 **Screen shows**: two-classifier agreement panel:
 ```
-Classifier 1:  Qwen3Guard-Gen-8B
+Classifier 1:  Qwen3Guard-Gen-0.6B
 Classifier 2:  Granite-Guardian-3.3-8b
-Each judge:    <=8.2B parameters  (each is below the 32B cap)
+Full catalog:  30.973B parameters  (below the 32B total cap)
 
 Corpus:        40 prompts
 Agreement:     35 / 40
@@ -87,7 +88,7 @@ Split cases:   5  (flagged for human review)
 ```
 Config:    phi-2 + GPTQ
 Verdict:   ROUTE  (HIGH refusal-drift, score 0.6199)
-Kappa:     0.7531   (judge cohort: RELIABLE)
+Kappa:     0.7484   (judge cohort: RELIABLE)
 Signature: Ed25519
 ```
 **Action**: Click "Verify". Screen shows:
@@ -144,9 +145,10 @@ Safety Certificate        →  Ed25519, tamper-evident
 Constitutional Debate     →  3 small models, consensus CONDITIONAL
 
 Every individual model: <=8.2B.
+Complete model catalog: 30.973B / 32B.
 huggingface.co/spaces/build-small-hackathon/quantsafe-certifier
 ```
-**Voiceover**: "A complete safety-certification pipeline — static screen, live scoring, judge agreement, cryptographic attestation, constitutional debate — built entirely from small models. Every component is under 9B parameters. That's the whole point."
+**Voiceover**: "A complete safety-certification pipeline — static screen, fine-tuned semantic cross-check, judge agreement, cryptographic attestation, and constitutional debate. The complete catalog is 30.973 billion parameters, under the 32-billion total cap."
 
 ---
 
@@ -161,13 +163,14 @@ huggingface.co/spaces/build-small-hackathon/quantsafe-certifier
 | HIGH cells as share of configs | 9/45 = 20% | derived |
 | Gap recovery from routing HIGH cells | 76.17% | tr163_analysis.json → in_sample.high_band |
 | ROC AUC (LOOCV) | 0.8445 | tr163_analysis.json → out_of_sample_loocv.roc_auc |
-| Judge model size | each <=8.2B (Qwen3Guard-Gen-8B + Granite-Guardian-3.3-8b) | model cards |
+| Semantic refusal classifier | 97.73% accuracy / 0.976 refusal F1 on 441 XSTest responses | Crusadersk/quantsafe-refusal-modernbert/metrics.json |
+| Judge model size | 0.752B + 8.171B (Qwen3Guard-Gen-0.6B + Granite-Guardian-3.3-8b) | model cards |
 | Corpus size | 40 prompts | judge_corpus.json |
 | Judge agreement count | 35/40 | judge_results.json |
-| Cohen's kappa | 0.7531, RELIABLE | judge_results.json |
+| Cohen's kappa | 0.7484, RELIABLE | judge_results.json |
 | Split cases | 5 | judge_results.json |
 | Debate models | Qwen3-8B, Phi-4-mini-instruct, SmolLM3-3B | debate config |
 | Debate config | MODERATE/MIXED (contested) | debate scenario |
 | Consensus | CONDITIONAL | debate_examples.json |
 | Consensus agreement | 0.67 (genuine 2/3 majority: 2 CONDITIONAL, 1 ROUTE) | debate_examples.json |
-| Largest single model in pipeline | 8.19B (Qwen3-8B / Qwen3Guard-Gen-8B) | model card |
+| Total runtime model catalog | 30.972674562B, counting both Llama 3.2 1B repos and the fine-tuned classifier | model cards |

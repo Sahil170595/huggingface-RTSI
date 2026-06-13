@@ -601,7 +601,7 @@ class TestSotaJudgeCohort:
 
     def test_model_ids(self):
         ids = {j.model_id for j in judges.SOTA_JUDGES}
-        assert ids == {"Qwen/Qwen3Guard-Gen-8B", "ibm-granite/granite-guardian-3.3-8b"}
+        assert ids == {"Qwen/Qwen3Guard-Gen-0.6B", "ibm-granite/granite-guardian-3.3-8b"}
 
     def test_build_fn_yields_conversation(self):
         for j in judges.SOTA_JUDGES:
@@ -610,3 +610,42 @@ class TestSotaJudgeCohort:
                 {"role": "user", "content": "the prompt"},
                 {"role": "assistant", "content": "the response"},
             ]
+
+
+class TestGoldValidation:
+    def test_classification_metrics_penalize_unclear(self):
+        result = judges.classification_metrics(
+            ["safe", "safe", "unsafe", "unsafe"],
+            ["safe", "unclear", "unsafe", "safe"],
+        )
+        assert result["n_correct"] == 2
+        assert result["accuracy"] == 0.5
+        assert result["coverage"] == 0.75
+        assert 0.0 < result["macro_f1"] < 1.0
+
+    def test_selective_consensus_reports_coverage_and_accuracy(self):
+        result = judges.selective_consensus_metrics(
+            ["safe", "unsafe", "safe", "unsafe"],
+            [
+                ["safe", "unsafe", "safe", "safe"],
+                ["safe", "unsafe", "unsafe", "safe"],
+            ],
+        )
+        assert result["n_covered"] == 3
+        assert result["n_correct"] == 2
+        assert result["coverage"] == 0.75
+        assert abs(result["accuracy"] - (2 / 3)) < 1e-12
+
+    def test_cached_metrics_match_vectors_when_present(self):
+        cached = json.loads(
+            (_SPACE / "substrate" / "judge_results.json").read_text(encoding="utf-8")
+        )
+        corpus = json.loads(
+            (_SPACE / "substrate" / "judge_corpus.json").read_text(encoding="utf-8")
+        )["items"]
+        expected = [item["expected"] for item in corpus]
+        for report in cached["judges"]:
+            if "metrics" not in report:
+                continue
+            recomputed = judges.classification_metrics(expected, report["verdict_vector"])
+            assert abs(recomputed["accuracy"] - report["metrics"]["accuracy"]) < 1e-12
