@@ -2,10 +2,10 @@
 
 ## 1. Three Required Deliverables
 
-- [x] **Public staging Space URL** — `https://huggingface.co/spaces/Crusadersk/quantsafe-certifier`
+- [x] **Final public Space URL** — `https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier`
 - [x] **Demo video** — `demo/quantsafe-demo.webm` (69 s, 1280x720)
 - [ ] **Social post** — draft in `social/POST.md`; post to X and LinkedIn before submitting the form
-- [ ] **Official org** — membership is visible, but Space creation currently returns HTTP 403
+- [x] **Official org** — `build-small-hackathon`
 
 ---
 
@@ -41,8 +41,7 @@ All models pass the rule because each individual model is below 32B. The largest
 
 ### HF Space
 
-- Current staging Space: `huggingface.co/spaces/Crusadersk/quantsafe-certifier`.
-- Final submission must be copied or moved to `build-small-hackathon` by an account/token with org write access.
+- Final Space: `huggingface.co/spaces/build-small-hackathon/quantsafe-certifier`.
 - `requirements.txt` lists `gradio`, `numpy`, and all runtime deps.
 - Hardware tier: CPU Basic covers substrate lookup and the live CPU tab; authenticated Modal GPU endpoints power remote debate/judge inference.
 
@@ -70,13 +69,12 @@ Note: `rtsi_core.py` is the vendored internal scorer — excluded as a known int
 
 ## 5. Move the Final Space into the Official Organization
 
-The staging Space is public. The remaining eligibility blocker is organization write access:
+The organization-owned Space is public. Recheck before submitting:
 
-1. Ask an organization owner to grant a role/token with Space creation rights, or ask them to move the staging Space.
-2. Create or transfer `build-small-hackathon/quantsafe-certifier`.
-3. Confirm the organization-owned Space is public, reaches `RUNNING`, and every tab loads.
-4. Update README, social copy, and demo overlays to the organization URL.
-5. Do not submit until the public demo-video and social-post URLs are also in README.
+1. Confirm `build-small-hackathon/quantsafe-certifier` reaches `RUNNING`.
+2. Confirm every tab loads and the live debate button is enabled.
+3. Confirm README, social copy, and demo overlays use the organization URL.
+4. Do not submit until the public social-post URL is in README.
 
 ---
 
@@ -104,7 +102,7 @@ Note: the cached example (Qwen3-8B + Phi-4-mini-instruct + SmolLM3-3B, MODERATE/
 
 HF Spaces sleep after inactivity. Before recording the demo video:
 
-1. Open `https://huggingface.co/spaces/Crusadersk/quantsafe-certifier` in a browser.
+1. Open `https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier` in a browser.
 2. Wait for the status indicator to go green.
 3. On the Live screen tab: trigger one dummy run with the smallest model (Qwen3-0.6B) to load weights into memory and warm the cache.
 4. Then start recording — the first real run in the video reuses the cached weights.

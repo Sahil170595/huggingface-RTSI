@@ -1,6 +1,6 @@
 """scripts/deploy_space.py — push the repo to the HF Space + set secrets.
 
-Uploads the working tree to the public staging Space
+Uploads the working tree to the official Build Small organization Space
 (respecting .gitignore-style ignore patterns) and, when the corresponding
 environment variables are present, sets the Space secrets the app needs:
 
@@ -10,6 +10,7 @@ environment variables are present, sets the Space secrets the app needs:
     HF_TOKEN                     -> for gated/Inference-Provider model access
 
 Usage (PowerShell):
+    # The active Hugging Face token must have write access to build-small-hackathon.
     $env:MODAL_ENDPOINT = "https://sahilkadadekar--generate.modal.run"
     $env:MODAL_TOKEN    = "<token>"
     python scripts/deploy_space.py            # upload + set whatever secrets are in env
@@ -23,7 +24,7 @@ from pathlib import Path
 
 from huggingface_hub import HfApi
 
-REPO_ID = "Crusadersk/quantsafe-certifier"
+REPO_ID = "build-small-hackathon/quantsafe-certifier"
 ROOT = Path(__file__).resolve().parent.parent
 
 IGNORE = [
@@ -78,7 +79,7 @@ def main() -> int:
             repo_type="space",
             folder_path=str(ROOT),
             ignore_patterns=IGNORE,
-            commit_message="Audit: reproducible models, parallel Modal debate, submission polish",
+            commit_message="Deploy audited QuantSafe Certifier",
         )
         print("Upload complete.")
 

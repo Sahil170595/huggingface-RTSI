@@ -144,7 +144,7 @@ Safety Certificate        →  Ed25519, tamper-evident
 Constitutional Debate     →  3 small models, consensus CONDITIONAL
 
 Every individual model: <=8.2B.
-huggingface.co/spaces/Crusadersk/quantsafe-certifier
+huggingface.co/spaces/build-small-hackathon/quantsafe-certifier
 ```
 **Voiceover**: "A complete safety-certification pipeline — static screen, live scoring, judge agreement, cryptographic attestation, constitutional debate — built entirely from small models. Every component is under 9B parameters. That's the whole point."
 

@@ -365,14 +365,14 @@ def build_pareto_fig() -> go.Figure:
         bgcolor="rgba(250,249,246,0.94)", bordercolor="#7B2D26", borderpad=5,
     )
     fig.update_layout(
-        title="Route 20% of configs, recover 76% of the refusal-rate gap",
+        title="Route 20% of configs<br><sup>recover 76% of the refusal-rate gap</sup>",
         xaxis_title="% of cells routed to safe baseline",
         yaxis_title="% of refusal-rate gap recovered",
-        margin=dict(l=60, r=30, t=64, b=50),
-        legend=dict(orientation="h", yanchor="bottom", y=-0.28, xanchor="center", x=0.5),
+        margin=dict(l=60, r=30, t=80, b=90),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.42, xanchor="center", x=0.5),
         hovermode="closest",
     )
-    _editorial_layout(fig, 420)
+    _editorial_layout(fig, 470)
     fig.update_xaxes(range=[-2, 102])
     fig.update_yaxes(range=[0, 105])
     return fig
@@ -416,10 +416,14 @@ def build_heatmap_fig() -> go.Figure:
         )
     )
     fig.update_layout(
-        title="45-cell refusal-drift matrix — sage LOW · ochre MODERATE · oxblood HIGH (blank = not measured)",
-        margin=dict(l=110, r=30, t=64, b=40),
+        title=(
+            "45-cell refusal-drift matrix"
+            "<br><sup>sage LOW · ochre MODERATE · oxblood HIGH</sup>"
+            "<br><sup>blank = not measured</sup>"
+        ),
+        margin=dict(l=110, r=30, t=92, b=40),
     )
-    _editorial_layout(fig, 360)
+    _editorial_layout(fig, 390)
     fig.update_xaxes(showgrid=False)
     fig.update_yaxes(autorange="reversed", showgrid=False)
     return fig
@@ -1509,6 +1513,43 @@ _EDITORIAL_HEAD = """
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Hanken+Grotesk:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+@media (max-width: 640px) {
+  #huggingface-space-header {
+    right:8px !important;
+    top:8px !important;
+    max-width:calc(100vw - 16px) !important;
+    padding-left:8px !important;
+  }
+  #huggingface-space-header > div:first-child {
+    min-width:0 !important;
+    justify-content:flex-start !important;
+    padding-right:6px !important;
+    overflow:hidden !important;
+  }
+  #huggingface-space-header img { display:none !important; }
+  #huggingface-space-header a {
+    min-width:0 !important;
+    font-size:12px !important;
+    line-height:18px !important;
+  }
+  #huggingface-space-header > div:first-child > a:first-of-type {
+    max-width:114px !important;
+    overflow:hidden !important;
+    text-overflow:ellipsis !important;
+    white-space:nowrap !important;
+  }
+  #huggingface-space-header > div:first-child > a:nth-of-type(2) {
+    max-width:138px !important;
+    overflow:hidden !important;
+    text-overflow:ellipsis !important;
+    white-space:nowrap !important;
+  }
+  #huggingface-space-header > div:first-child > a:nth-of-type(3) {
+    display:none !important;
+  }
+}
+</style>
 """
 
 _EDITORIAL_CSS = """
@@ -1572,7 +1613,7 @@ _EDITORIAL_CSS = """
 }
 
 @media (max-width: 640px) {
-  .qs-header { padding:12px 0 2px !important; }
+  .qs-header { padding:56px 0 2px !important; }
   .qs-header-kicker { font-size:10px !important; letter-spacing:.18em !important; }
   .qs-header-title { font-size:36px !important; margin-top:3px !important; }
   .qs-header-subtitle { font-size:17px !important; }

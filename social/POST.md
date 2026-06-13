@@ -10,7 +10,7 @@
 >
 > QuantSafe Certifier screens, certifies, and debates quantized model safety — entirely on small models (<=9B).
 >
-> @huggingface Space: huggingface.co/spaces/Crusadersk/quantsafe-certifier
+> @huggingface Space: huggingface.co/spaces/build-small-hackathon/quantsafe-certifier
 > Built with @Gradio | GPU via @modal_labs
 
 ---
@@ -83,7 +83,7 @@ The entire pipeline — screening, two judges, and a three-model constitutional 
 
 Built with Gradio, hosted on Hugging Face Spaces. GPU acceleration via Modal.
 
-Try it: huggingface.co/spaces/Crusadersk/quantsafe-certifier
+Try it: huggingface.co/spaces/build-small-hackathon/quantsafe-certifier
 
 #MachineLearning #LLM #ModelSafety #Quantization #HuggingFace #Gradio
 

@@ -37,7 +37,7 @@ QuantSafe Certifier is a small-model safety workflow for a practical deployment 
 
 It screens a model/quantization cell, routes risky configurations, cross-checks independent safety judges, issues an Ed25519-signed certificate, and escalates genuinely contested cases to a constitutional multi-model debate.
 
-[Open the live Space](https://huggingface.co/spaces/Crusadersk/quantsafe-certifier) · [Watch the 69-second demo](demo/quantsafe-demo.webm) · [GitHub source](https://github.com/Sahil170595/huggingface-RTSI) · [Field notes](FIELD_NOTES.md) · [Codex build trace](AGENT_TRACE.md)
+[Open the live Space](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier) · [Watch the 69-second demo](demo/quantsafe-demo.webm) · [GitHub source](https://github.com/Sahil170595/huggingface-RTSI) · [Field notes](FIELD_NOTES.md) · [Codex build trace](AGENT_TRACE.md)
 
 ## Why this matters
 
@@ -113,9 +113,9 @@ The endpoint requires `Authorization: Bearer $MODAL_TOKEN`; unknown models are r
 | Public demo video | [`demo/quantsafe-demo.webm`](demo/quantsafe-demo.webm), 69 seconds |
 | Social copy | Ready in [`social/POST.md`](social/POST.md) |
 | Public social post URL | Pending publication |
-| Official hackathon organization | Blocked: membership is visible, but the current role/token cannot create org Spaces |
+| Official hackathon organization | Complete: `build-small-hackathon` |
 
-The required demo and social links will be added here after publication. Final eligibility also requires an organization owner to grant create access or move this Space into `build-small-hackathon`.
+The required social link will be added here after publication.
 
 ## Local verification
 
