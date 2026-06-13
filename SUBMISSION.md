@@ -3,7 +3,7 @@
 ## 1. Three Required Deliverables
 
 - [x] **Public staging Space URL** — `https://huggingface.co/spaces/Crusadersk/quantsafe-certifier`
-- [ ] **Demo video** — 60–90 s screen recording walking the five-screen tour (script in `demo/STORYBOARD.md`)
+- [x] **Demo video** — `demo/quantsafe-demo.webm` (69 s, 1280x720)
 - [ ] **Social post** — draft in `social/POST.md`; post to X and LinkedIn before submitting the form
 - [ ] **Official org** — membership is visible, but Space creation currently returns HTTP 403
 

@@ -36,5 +36,6 @@ This is a high-level, reviewable action trace for the final audit pass. It recor
 - Desktop and mobile Gradio flows checked with Playwright
 - Authenticated Modal smoke: Qwen2.5-0.5B returned `OK` in 7.7 seconds; unauthenticated request returned HTTP 401
 - Public Space live debate: three models, two rounds, `CONDITIONAL` consensus in 34.8 seconds
+- Public Space walkthrough recorded at 1280x720: `demo/quantsafe-demo.webm` (68.96 seconds)
 
 OpenAI Codex performed this audit and implementation pass in collaboration with the repository owner.

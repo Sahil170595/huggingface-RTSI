@@ -1,4 +1,6 @@
-# QuantSafe Certifier — Demo Storyboard (90–120 s)
+# QuantSafe Certifier — Demo Storyboard
+
+Recorded browser walkthrough: [`quantsafe-demo.webm`](quantsafe-demo.webm) (69 seconds, 1280x720). The longer shot list below remains the voiceover/editing plan for a narrated cut.
 
 ## Arc Summary
 Hook on a silent safety failure that benchmarks miss → score it → show the Pareto routing payoff → verify the safety eval itself → cryptographic certificate → small models debate a contested call → close on the full pipeline.
