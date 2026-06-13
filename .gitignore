@@ -16,3 +16,5 @@ transformers_cache/
 hf_cache/
 .cert_key_local.txt
 .playwright-cli/
+AGENT_TRACE.md
+social/

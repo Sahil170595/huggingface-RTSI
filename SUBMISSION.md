@@ -4,7 +4,6 @@
 
 - [x] **Final public Space URL** — `https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier`
 - [x] **Demo video** — `demo/quantsafe-demo.webm` (69 s, 1280x720)
-- [ ] **Social post** — draft in `social/POST.md`; post to X and LinkedIn before submitting the form
 - [x] **Official org** — `build-small-hackathon`
 
 ---
@@ -73,8 +72,7 @@ The organization-owned Space is public. Recheck before submitting:
 
 1. Confirm `build-small-hackathon/quantsafe-certifier` reaches `RUNNING`.
 2. Confirm every tab loads and the live debate button is enabled.
-3. Confirm README, social copy, and demo overlays use the organization URL.
-4. Do not submit until the public social-post URL is in README.
+3. Confirm README and demo overlays use the organization URL.
 
 ---
 

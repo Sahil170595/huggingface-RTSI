@@ -43,6 +43,8 @@ IGNORE = [
     "*.pem",
     ".playwright-mcp/*",
     ".playwright-cli/*",
+    "AGENT_TRACE.md",
+    "social/*",
     "_applog.txt",
     "*.log",
     "scripts/*",  # regen/deploy tooling is dev-only; the Space doesn't run it
