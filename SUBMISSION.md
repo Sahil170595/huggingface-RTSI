@@ -3,7 +3,7 @@
 ## 1. Three Required Deliverables
 
 - [ ] **Space URL** — `https://huggingface.co/spaces/Crusadersk/quantsafe-certifier`
-- [ ] **Demo video** — 60–90 s screen recording walking the four-tab tour (script in `demo/PLAYBOOK.md`)
+- [ ] **Demo video** — 60–90 s screen recording walking the four-tab tour (script in `demo/STORYBOARD.md`)
 - [ ] **Social post** — draft in `social/POST.md`; post to X and LinkedIn before submitting the form
 
 ---
@@ -53,12 +53,14 @@ Run from the repo root. Must return zero matches before submitting:
 ```bash
 grep -rniE "neurips|iclr|icml|openreview|submission #|under review|blind review" . \
   --exclude=rtsi_core.py \
+  --exclude=SUBMISSION.md \
+  --exclude-dir=.git \
   --exclude-dir=__pycache__
 # Then run a second pass for the blind method-name acronyms, kept in an
 # internal-only list (deliberately NOT enumerated in this public file).
 ```
 
-Expected output: _(empty)_
+Expected output: _(empty)_ — zero matches. `SUBMISSION.md` is excluded because this section's own command text would otherwise match itself; `.git` is excluded because packed history objects retain old text and are never served by the Space.
 
 Note: `rtsi_core.py` is the vendored internal scorer — excluded as a known internal residual; its symbol names are not user-facing and do not appear in any UI tab.
 

@@ -11,6 +11,10 @@ Design mirrors muse/contracts/signing.py (P107.7 precedent):
 - verify_cert never raises — returns False on any failure.
 - cert_hash is stable and deterministic (sorted keys, no whitespace of the
   full signed cert including pubkey_hex + signature_hex); used for chaining.
+- Non-finite floats (NaN / ±Infinity) are rejected at issuance with a clear
+  ValueError, and all canonical JSON uses allow_nan=False — NaN/Infinity are
+  not valid JSON, and a cert carrying them would fail portable verification
+  on any strict parser.
 
 Only dependency beyond stdlib: cryptography.
 """
@@ -20,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import os
 import uuid
 from typing import Any
@@ -132,14 +137,42 @@ class SigningKey:
 # ---------------------------------------------------------------------------
 
 
+def _validate_finite(value: Any, path: str = "cert") -> None:
+    """Raise ValueError if any float anywhere in value is NaN or ±Infinity.
+
+    Walked recursively over dicts / lists / tuples.  Called at issuance
+    (sign_cert) so a non-finite score fails loudly with a message naming the
+    offending field — instead of surfacing later as a cryptic json.dumps
+    error, or worse, as a verification failure on a consumer's machine.
+    """
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError(
+            f"cannot sign certificate: field {path!r} is {value!r} — "
+            f"NaN/Infinity are not valid JSON and would break portable "
+            f"verification. Fix the score upstream before issuing."
+        )
+    if isinstance(value, dict):
+        for k, v in value.items():
+            _validate_finite(v, f"{path}.{k}")
+    elif isinstance(value, (list, tuple)):
+        for i, v in enumerate(value):
+            _validate_finite(v, f"{path}[{i}]")
+
+
 def _canonical_payload(cert: dict) -> bytes:
     """Return the canonical UTF-8 bytes that get signed.
 
     Excludes pubkey_hex and signature_hex — they are added by sign_cert and
     must not be part of the payload they attest to.
+
+    allow_nan=False: NaN/Infinity serialize to non-standard JSON tokens
+    (``NaN``, ``Infinity``) that strict parsers reject, which would make the
+    signed payload non-portable.  json.dumps raises ValueError instead.
     """
     stripped = {k: v for k, v in cert.items() if k not in _EXCLUDED_FROM_PAYLOAD}
-    return json.dumps(stripped, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return json.dumps(
+        stripped, sort_keys=True, separators=(",", ":"), allow_nan=False
+    ).encode("utf-8")
 
 
 def sign_cert(cert: dict, key: SigningKey) -> dict:
@@ -147,7 +180,15 @@ def sign_cert(cert: dict, key: SigningKey) -> dict:
 
     The caller must NOT include pubkey_hex / signature_hex in cert yet;
     this function adds them.  Safe to re-call (overwrites old values).
+
+    Raises
+    ------
+    ValueError
+        If any float in cert is NaN or ±Infinity.  Such values produce
+        non-standard JSON that portable verifiers reject, so issuance fails
+        loudly here rather than verification failing silently later.
     """
+    _validate_finite(cert)
     payload = _canonical_payload(cert)
     sig_bytes = key.sign(payload)
     return {
@@ -197,9 +238,13 @@ def cert_hash(signed_cert: dict) -> str:
     """SHA-256 hex of the full signed cert (including pubkey_hex + signature_hex).
 
     Used as prev_cert_hash in the next cert to form a chain.  Deterministic
-    and stable: sorted keys, no whitespace.
+    and stable: sorted keys, no whitespace, allow_nan=False (a properly
+    issued cert can never contain NaN/Infinity — see sign_cert — so this
+    raising ValueError means the input was never validly signed).
     """
-    canonical = json.dumps(signed_cert, sort_keys=True, separators=(",", ":"))
+    canonical = json.dumps(
+        signed_cert, sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -243,6 +288,12 @@ def build_and_sign_cert(
     Returns
     -------
     Fully signed cert dict conforming to the certificate JSON schema.
+
+    Raises
+    ------
+    ValueError
+        If any score/kappa (or any other float) is NaN or ±Infinity — see
+        sign_cert.  Issuance is the right place to fail loudly.
     """
     cert: dict[str, Any] = {
         "cert_id": uuid.uuid4().hex,

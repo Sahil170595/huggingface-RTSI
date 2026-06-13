@@ -1,6 +1,8 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.benchmarks/
+.claude/
 _applog.txt
 .venv/
 .env

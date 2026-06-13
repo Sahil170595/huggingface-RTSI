@@ -9,6 +9,7 @@ __main__ smoke, not in this suite.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -21,8 +22,11 @@ if str(_SPACE) not in sys.path:
 
 import debate
 from debate import (
+    CONSENSUS_AGREEMENT_THRESHOLD,
     CONSTITUTION,
     DEFAULT_STANCE,
+    LABEL_CONSENSUS,
+    LABEL_NO_CONSENSUS,
     ROUND_CRITIQUE,
     ROUND_PROPOSE,
     STANCE_CONDITIONAL,
@@ -30,6 +34,7 @@ from debate import (
     STANCE_ROUTE,
     STANCES,
     compute_consensus,
+    consensus_label,
     generate,
     parse_stance,
     run_debate,
@@ -192,6 +197,81 @@ class TestComputeConsensus:
         ]
         out = compute_consensus(final)
         assert sum(out["vote_breakdown"].values()) == 3
+
+
+# ---------------------------------------------------------------------------
+# (b2) consensus_label: a tie-broken verdict must not render as CONSENSUS
+# ---------------------------------------------------------------------------
+
+class TestConsensusLabel:
+    def test_two_model_tie_is_no_consensus(self):
+        # 1-1 split (2 models) -> 0.5 agreement: the verdict comes from the
+        # safety-first tie-break, NOT from agreement. Must not say CONSENSUS.
+        cons = compute_consensus([
+            {"model": "a", "stance": STANCE_DEPLOY, "text": ""},
+            {"model": "b", "stance": STANCE_ROUTE, "text": ""},
+        ])
+        assert cons["agreement"] == 0.5
+        out = consensus_label(cons)
+        assert out["label"] == LABEL_NO_CONSENSUS
+        # The explanation names the safety-first tie-break.
+        assert "tie-break" in out["explanation"]
+        assert "ROUTE > CONDITIONAL > DEPLOY" in out["explanation"]
+
+    def test_two_thirds_is_consensus(self):
+        # 2-1 split (3 models) -> agreement exactly 2/3: at the bar -> CONSENSUS.
+        cons = compute_consensus([
+            {"model": "a", "stance": STANCE_ROUTE, "text": ""},
+            {"model": "b", "stance": STANCE_ROUTE, "text": ""},
+            {"model": "c", "stance": STANCE_DEPLOY, "text": ""},
+        ])
+        assert cons["agreement"] == pytest.approx(2 / 3)
+        out = consensus_label(cons)
+        assert out["label"] == LABEL_CONSENSUS
+
+    def test_unanimous_is_consensus(self):
+        cons = compute_consensus([
+            {"model": "a", "stance": STANCE_ROUTE, "text": ""},
+            {"model": "b", "stance": STANCE_ROUTE, "text": ""},
+        ])
+        assert cons["agreement"] == 1.0
+        out = consensus_label(cons)
+        assert out["label"] == LABEL_CONSENSUS
+
+    def test_returns_exactly_label_and_explanation(self):
+        out = consensus_label({"verdict": STANCE_ROUTE, "agreement": 1.0})
+        assert set(out.keys()) == {"label", "explanation"}
+        assert isinstance(out["explanation"], str) and out["explanation"]
+
+    def test_does_not_mutate_the_consensus_dict(self):
+        # Pure helper: the stored consensus shape (cached substrate included)
+        # must pass through untouched.
+        cons = {
+            "verdict": STANCE_ROUTE,
+            "vote_breakdown": {STANCE_DEPLOY: 1, STANCE_ROUTE: 1, STANCE_CONDITIONAL: 0},
+            "agreement": 0.5,
+        }
+        snapshot = {**cons, "vote_breakdown": dict(cons["vote_breakdown"])}
+        consensus_label(cons)
+        assert cons == snapshot
+
+    def test_junk_agreement_reads_as_no_consensus(self):
+        out = consensus_label({"verdict": STANCE_DEPLOY, "agreement": "n/a"})
+        assert out["label"] == LABEL_NO_CONSENSUS
+
+    def test_threshold_is_two_thirds(self):
+        # Pin the documented bar so a future change is loud.
+        assert CONSENSUS_AGREEMENT_THRESHOLD == pytest.approx(2 / 3)
+
+    def test_cached_substrate_example_labels_as_no_consensus(self):
+        # The bundled debate example is exactly the 1-1 tie at 0.5 agreement —
+        # the case this helper exists for. Read-only: the cache is NOT edited.
+        cached = json.loads(
+            (_SPACE / "substrate" / "debate_examples.json").read_text(encoding="utf-8")
+        )
+        out = consensus_label(cached["consensus"])
+        assert out["label"] == LABEL_NO_CONSENSUS
+        assert "tie-break" in out["explanation"]
 
 
 # ---------------------------------------------------------------------------
@@ -385,3 +465,99 @@ class TestBackendContract:
     def test_constitution_is_nonempty_constant(self):
         assert isinstance(CONSTITUTION, str)
         assert "DEPLOY" in CONSTITUTION and "ROUTE" in CONSTITUTION and "CONDITIONAL" in CONSTITUTION
+
+
+# ---------------------------------------------------------------------------
+# (e) Modal client contract: auth header, detail surfacing, quantization,
+#     300 s timeout — all against a FAKE requests module (no network)
+# ---------------------------------------------------------------------------
+
+class _FakeResp:
+    """Minimal stand-in for requests.Response."""
+
+    def __init__(self, status_code=200, payload=None, text=""):
+        self.status_code = status_code
+        self._payload = payload
+        self.text = text or (json.dumps(payload) if payload is not None else "")
+
+    def json(self):
+        if self._payload is None:
+            raise ValueError("response body is not JSON")
+        return self._payload
+
+
+class _FakeRequests:
+    """Stands in for the lazily-imported ``requests`` module in _generate_modal."""
+
+    def __init__(self, resp: _FakeResp):
+        self.resp = resp
+        self.calls: list[dict] = []
+
+    def post(self, url, json=None, headers=None, timeout=None):  # noqa: A002 — mirrors requests' kwarg
+        self.calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
+        return self.resp
+
+
+class TestModalClient:
+    def _install(self, monkeypatch, resp: _FakeResp) -> _FakeRequests:
+        fake = _FakeRequests(resp)
+        monkeypatch.setitem(sys.modules, "requests", fake)
+        monkeypatch.setenv("MODAL_ENDPOINT", "http://modal.test/generate")
+        return fake
+
+    def test_success_parses_text_and_records_quantization(self, monkeypatch):
+        fake = self._install(
+            monkeypatch,
+            _FakeResp(200, {"text": "  STANCE: ROUTE\nToo risky.  ", "quantization": "nf4-4bit"}),
+        )
+        monkeypatch.setenv("MODAL_TOKEN", "sekret-token")
+        out = generate("m1", "p", backend="modal")
+        assert out == "STANCE: ROUTE\nToo risky."
+        # The quantization disclosure is surfaced for the UI.
+        assert debate.LAST_MODAL_QUANTIZATION == "nf4-4bit"
+        call = fake.calls[0]
+        assert call["url"] == "http://modal.test/generate"
+        assert call["headers"]["Authorization"] == "Bearer sekret-token"
+        assert call["timeout"] == 300  # cold start can exceed 120 s
+        assert call["json"]["model"] == "m1"
+        assert call["json"]["max_new_tokens"] == 220
+        # The constitutional frame rides along to the remote model.
+        assert call["json"]["prompt"].startswith(CONSTITUTION)
+
+    def test_no_token_sends_no_auth_header(self, monkeypatch):
+        fake = self._install(monkeypatch, _FakeResp(200, {"text": "x"}))
+        monkeypatch.delenv("MODAL_TOKEN", raising=False)
+        generate("m1", "p", backend="modal")
+        assert "Authorization" not in (fake.calls[0]["headers"] or {})
+
+    def test_401_surfaces_detail_as_runtimeerror(self, monkeypatch):
+        self._install(
+            monkeypatch, _FakeResp(401, {"detail": "Missing or invalid bearer token"})
+        )
+        with pytest.raises(RuntimeError, match="Missing or invalid bearer token"):
+            generate("m1", "p", backend="modal")
+
+    def test_400_bad_input_surfaces_detail(self, monkeypatch):
+        self._install(monkeypatch, _FakeResp(400, {"detail": "unknown model 'zzz'"}))
+        with pytest.raises(RuntimeError, match="unknown model"):
+            generate("m1", "p", backend="modal")
+
+    def test_non_json_error_body_falls_back_to_text(self, monkeypatch):
+        self._install(monkeypatch, _FakeResp(502, None, text="Bad Gateway"))
+        with pytest.raises(RuntimeError, match="Bad Gateway"):
+            generate("m1", "p", backend="modal")
+
+    def test_run_debate_surfaces_quantization(self, monkeypatch):
+        # Full modal-backed debate (fake transport): the result carries the
+        # endpoint's precision disclosure for the UI.
+        self._install(
+            monkeypatch, _FakeResp(200, {"text": "STANCE: ROUTE", "quantization": "bf16"})
+        )
+        out = run_debate("q", models=["m1", "m2"], backend="modal", rounds=1)
+        assert out["quantization"] == "bf16"
+        assert out["final_verdict"] == STANCE_ROUTE
+
+    def test_run_debate_omits_quantization_when_endpoint_silent(self, monkeypatch):
+        self._install(monkeypatch, _FakeResp(200, {"text": "STANCE: ROUTE"}))
+        out = run_debate("q", models=["m1"], backend="modal", rounds=1)
+        assert "quantization" not in out

@@ -5,8 +5,13 @@ generation request and returns a single text completion — exactly what
 debate.py's _generate_modal() POSTs and reads.
 
 API contract (POST /generate):
+    Request  header: Authorization: Bearer <QUANTSAFE_MODAL_TOKEN>
+                     (token lives in the modal.Secret "quantsafe-auth")
     Request  JSON: {"model": "<hf_model_id>", "prompt": "<text>", "max_new_tokens": 220}
-    Response JSON: {"text": "<completion>"}
+    Response JSON: {"text": "<completion>", "quantization": "nf4-4bit" | "fp16"}
+    Errors:        HTTP 401 (secret unset, or bearer token missing/mismatched)
+                   HTTP 400 (unknown model, empty prompt, bad max_new_tokens)
+                   — FastAPI HTTPException, body {"detail": "<message>"}
 
 Allowed model IDs (hardcoded allowlist — reject unknown model strings):
     "Qwen/Qwen2.5-7B-Instruct"          (default; production debate quality)
@@ -27,36 +32,47 @@ GPU:
 
 === DEPLOY RUNBOOK (run these steps when Modal credits are approved) ===
 
-    1.  Install the Modal client (do this once):
-            pip install modal
+    1.  Install the Modal client + fastapi (do this once; fastapi is imported
+        at module level for the endpoint's auth header, so the deploy machine
+        needs it too):
+            pip install modal fastapi
 
     2.  Authenticate (opens a browser, links to your Modal account):
             modal setup
 
-    3.  Deploy this file:
+    3.  Create the shared auth secret (once; deploy fails without it).
+        Pick a long random token, e.g.:
+            python -c "import secrets; print(secrets.token_urlsafe(32))"
+            modal secret create quantsafe-auth QUANTSAFE_MODAL_TOKEN=<that-token>
+        The SAME value must be set as the MODAL_TOKEN secret on the HF Space
+        (clients send it as "Authorization: Bearer <MODAL_TOKEN>").
+
+    4.  Deploy this file:
             modal deploy modal_app.py
 
         Modal prints a URL like:
             https://<your-workspace>--debate-generate.modal.run
 
-    4.  Copy that URL into the HF Space secret (or local .env):
+    5.  Copy that URL into the HF Space secret (or local .env):
             MODAL_ENDPOINT=https://<your-workspace>--debate-generate.modal.run
 
-    5.  In the Debate tab (debate.py / app.py) set backend="modal".
+    6.  In the Debate tab (debate.py / app.py) set backend="modal".
         No code change needed — debate.py reads MODAL_ENDPOINT at call time.
 
-    6.  Verify the endpoint is live:
+    7.  Verify the endpoint is live:
             curl -s -X POST $MODAL_ENDPOINT \
               -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $MODAL_TOKEN" \
               -d '{"model":"Qwen/Qwen2.5-0.5B-Instruct","prompt":"Hello","max_new_tokens":20}' \
             | python -m json.tool
-        Expect: {"text": "..."}
+        Expect: {"text": "...", "quantization": "fp16"}
+        Without the Authorization header, expect HTTP 401 {"detail": "..."}.
 
-    7.  To change GPU tier (e.g. "t4" for smaller models):
+    8.  To change GPU tier (e.g. "t4" for smaller models):
             Edit the gpu= argument on DebateInferenceServer and redeploy.
             No Space-side changes needed.
 
-    8.  To add a new allowed model:
+    9.  To add a new allowed model:
             Add its HF model ID to ALLOWED_MODELS below and redeploy.
 
 === END RUNBOOK ===
@@ -65,6 +81,10 @@ GPU:
 import os
 from typing import Any
 
+# fastapi is needed at IMPORT time (Header() lives in the endpoint signature),
+# both in the container (via fastapi[standard] in the image) and on the deploy
+# machine: `pip install fastapi`. It is NOT a dependency of the modal client.
+import fastapi
 import modal
 
 # NOTE: do NOT add `from __future__ import annotations` here — it stringizes the
@@ -85,6 +105,16 @@ ALLOWED_MODELS: set[str] = {
 }
 
 _DEFAULT_MODEL = "Qwen/Qwen2.5-7B-Instruct"
+
+
+def _quantization_for(model_id: str) -> str:
+    """Precision label reported in the response contract.
+
+    Mirrors DebateInferenceServer.load(): 7B models are loaded 4-bit NF4 to fit
+    VRAM; everything smaller loads plain fp16. Keep the two in sync via this
+    single helper.
+    """
+    return "nf4-4bit" if ("7B" in model_id or "7b" in model_id) else "fp16"
 
 # ---------------------------------------------------------------------------
 # Container image — torch + transformers in fp16, bitsandbytes for 4-bit on A10g
@@ -148,7 +178,7 @@ class DebateInferenceServer:
 
         # Use 4-bit NF4 quantisation for 7B models to keep VRAM under 10 GB.
         # 0.5B / 1.5B models skip quantisation (they're already tiny).
-        use_4bit = "7B" in self.model_id or "7b" in self.model_id
+        use_4bit = _quantization_for(self.model_id) == "nf4-4bit"
         bnb_config = (
             BitsAndBytesConfig(
                 load_in_4bit=True,
@@ -212,18 +242,29 @@ class DebateInferenceServer:
 
 
 # ---------------------------------------------------------------------------
-# Web endpoint — HTTP POST /generate, matching debate.py's modal backend path.
+# Web endpoint — HTTP POST /generate, matching the shared client contract
+# (debate.py's modal backend and inference.py's _infer_modal).
 #
-# debate.py sends:  POST MODAL_ENDPOINT  {"model": "...", "prompt": "...", "max_new_tokens": 220}
-# This returns:                          {"text": "..."}
+# Clients send:  POST MODAL_ENDPOINT  {"model": "...", "prompt": "...", "max_new_tokens": 220}
+#                with header           Authorization: Bearer <QUANTSAFE_MODAL_TOKEN>
+# This returns:                        {"text": "...", "quantization": "nf4-4bit" | "fp16"}
+# Errors:        fastapi.HTTPException -> {"detail": "..."} with 401 (auth) / 400 (input).
 #
-# The @modal.web_endpoint label becomes the URL path suffix printed by `modal deploy`.
+# The @modal.fastapi_endpoint label becomes the URL path suffix printed by `modal deploy`.
 # ---------------------------------------------------------------------------
 
-@app.function()
+@app.function(secrets=[modal.Secret.from_name("quantsafe-auth")])
 @modal.fastapi_endpoint(method="POST", label="generate")
-def generate_endpoint(body: dict[str, Any]) -> dict[str, str]:
-    """HTTP POST handler.  Validates the request and delegates to the GPU class.
+def generate_endpoint(
+    body: dict[str, Any],
+    authorization: str = fastapi.Header(default=""),
+) -> dict[str, str]:
+    """HTTP POST handler.  Authenticates, validates, delegates to the GPU class.
+
+    Auth:
+        Requires "Authorization: Bearer <QUANTSAFE_MODAL_TOKEN>".  The expected
+        token comes from the modal.Secret "quantsafe-auth".  If the secret is
+        unset OR the header is missing/mismatched -> HTTP 401.
 
     Request JSON:
         {
@@ -232,26 +273,54 @@ def generate_endpoint(body: dict[str, Any]) -> dict[str, str]:
             "max_new_tokens": 220                  # optional, default 220
         }
 
-    Response JSON:
-        {"text": "<completion>"}
+    Response JSON (HTTP 200):
+        {"text": "<completion>", "quantization": "nf4-4bit" | "fp16"}
 
-    Error responses (HTTP 400):
-        {"error": "<message>"}
+    Error responses (fastapi.HTTPException, body {"detail": "<message>"}):
+        401  secret unset, or Authorization bearer token missing/mismatched
+        400  unknown model, empty prompt, or non-integer max_new_tokens
     """
+    import hmac
+
+    expected = os.environ.get("QUANTSAFE_MODAL_TOKEN", "")
+    if not expected:
+        raise fastapi.HTTPException(
+            status_code=401,
+            detail="endpoint auth is not configured: the quantsafe-auth secret "
+                   "does not expose QUANTSAFE_MODAL_TOKEN",
+        )
+    if not hmac.compare_digest(
+        authorization.encode(), f"Bearer {expected}".encode()
+    ):
+        raise fastapi.HTTPException(
+            status_code=401,
+            detail="missing or invalid Authorization header "
+                   "(expected: 'Bearer <token>')",
+        )
+
     model_id: str = body.get("model", _DEFAULT_MODEL)
-    prompt: str = body.get("prompt", "")
-    max_new_tokens: int = int(body.get("max_new_tokens", 220))
+    prompt = body.get("prompt", "")
+    try:
+        max_new_tokens: int = int(body.get("max_new_tokens", 220))
+    except (TypeError, ValueError):
+        raise fastapi.HTTPException(
+            status_code=400, detail="max_new_tokens must be an integer",
+        )
 
     if model_id not in ALLOWED_MODELS:
-        # Return a structured error rather than a 500 so debate.py can surface it.
-        return {"error": f"model {model_id!r} not allowed. Allowed: {sorted(ALLOWED_MODELS)}"}
+        raise fastapi.HTTPException(
+            status_code=400,
+            detail=f"model {model_id!r} not allowed. Allowed: {sorted(ALLOWED_MODELS)}",
+        )
 
-    if not prompt.strip():
-        return {"error": "prompt must be a non-empty string"}
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise fastapi.HTTPException(
+            status_code=400, detail="prompt must be a non-empty string",
+        )
 
     if not (1 <= max_new_tokens <= 1024):
         max_new_tokens = max(1, min(max_new_tokens, 1024))
 
     server = DebateInferenceServer(model_id=model_id)
     text = server.generate.remote(prompt, max_new_tokens)
-    return {"text": text}
+    return {"text": text, "quantization": _quantization_for(model_id)}

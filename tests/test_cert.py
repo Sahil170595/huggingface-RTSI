@@ -270,3 +270,102 @@ def test_build_and_sign_cert_screen_results_preserved():
 def test_build_and_sign_cert_verdict_preserved():
     signed = _make_cert()
     assert signed["verdict"] == "PASS"
+
+
+# ---------------------------------------------------------------------------
+# 8. Non-finite scores (NaN / ±Inf) rejected loudly at issuance
+# ---------------------------------------------------------------------------
+
+
+def _screen_results_with_score(score: float) -> dict:
+    results = copy.deepcopy(_SCREEN_RESULTS)
+    results["refusal_stability"]["score"] = score
+    return results
+
+
+def _issue_with_score(score: float) -> dict:
+    return build_and_sign_cert(
+        config=_CONFIG,
+        screen_results=_screen_results_with_score(score),
+        verdict="PASS",
+        issued_at=_ISSUED_AT,
+        key=SigningKey.generate(),
+    )
+
+
+def test_nan_score_raises_value_error_at_issuance():
+    with pytest.raises(ValueError, match="NaN/Infinity"):
+        _issue_with_score(float("nan"))
+
+
+def test_inf_score_raises_value_error_at_issuance():
+    with pytest.raises(ValueError, match="NaN/Infinity"):
+        _issue_with_score(float("inf"))
+
+
+def test_negative_inf_score_raises_value_error_at_issuance():
+    with pytest.raises(ValueError, match="NaN/Infinity"):
+        _issue_with_score(float("-inf"))
+
+
+def test_non_finite_error_names_the_offending_field():
+    with pytest.raises(
+        ValueError, match=r"screen_results\.refusal_stability\.score"
+    ):
+        _issue_with_score(float("nan"))
+
+
+def test_nan_kappa_raises_value_error_at_issuance():
+    results = copy.deepcopy(_SCREEN_RESULTS)
+    results["judge_agreement"]["kappa"] = float("nan")
+    with pytest.raises(ValueError, match=r"judge_agreement\.kappa"):
+        build_and_sign_cert(
+            config=_CONFIG,
+            screen_results=results,
+            verdict="PASS",
+            issued_at=_ISSUED_AT,
+            key=SigningKey.generate(),
+        )
+
+
+def test_sign_cert_rejects_nan_directly():
+    key = SigningKey.generate()
+    with pytest.raises(ValueError, match="NaN/Infinity"):
+        sign_cert(
+            {
+                "cert_id": "abc",
+                "version": "1",
+                "issued_at": _ISSUED_AT,
+                "config": _CONFIG,
+                "screen_results": _screen_results_with_score(float("nan")),
+                "debate_result": None,
+                "verdict": "PASS",
+                "prev_cert_hash": None,
+            },
+            key,
+        )
+
+
+def test_verify_cert_with_nan_returns_false_never_raises():
+    # A hand-forged cert smuggling NaN past issuance must not crash verify —
+    # verify_cert never raises; allow_nan=False surfaces as a caught failure.
+    key = SigningKey.generate()
+    signed = _make_cert(key)
+    forged = copy.deepcopy(signed)
+    forged["screen_results"]["refusal_stability"]["score"] = float("nan")
+    assert verify_cert(forged) is False
+
+
+def test_cert_hash_rejects_non_finite():
+    signed = _make_cert()
+    mutated = copy.deepcopy(signed)
+    mutated["screen_results"]["judge_agreement"]["kappa"] = float("inf")
+    with pytest.raises(ValueError):
+        cert_hash(mutated)
+
+
+def test_finite_scores_still_sign_and_verify():
+    # Regression guard: ordinary finite floats are unaffected by the
+    # allow_nan=False tightening.
+    signed = _issue_with_score(0.7864)
+    assert verify_cert(signed) is True

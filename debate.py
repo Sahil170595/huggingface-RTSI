@@ -16,7 +16,10 @@ Three generation backends behind one `generate()` contract:
   "local" transformers 4-bit (NF4) on CUDA, lazy-load+cache per model_id. The
           dev path for the 4080. Uses the GPU, never CPU.
   "modal" HTTP POST os.environ["MODAL_ENDPOINT"] {model, prompt, max_new_tokens}
-          -> {"text": ...}. The production path (bigger models).
+          with "Authorization: Bearer <MODAL_TOKEN>" when MODAL_TOKEN is set
+          -> {"text": ..., "quantization": ...}; non-2xx carries a JSON
+          {"detail": ...} surfaced as RuntimeError. The production path
+          (bigger models).
   "hf"    huggingface_hub InferenceClient.chat_completion. Present for
           completeness; NOT used now (HF Inference credits are dead).
 
@@ -25,6 +28,8 @@ Public API (the contract the engine and the tab code against):
   CONSTITUTION  (module constant: the constitutional system instruction)
   run_debate(question, models, backend="local", rounds=2, max_new_tokens=220,
              on_event=None) -> dict
+  consensus_label(consensus) -> {"label": "CONSENSUS"|"NO CONSENSUS",
+             "explanation": str}  (pure UI labeling over the consensus dict)
 """
 
 from __future__ import annotations
@@ -83,6 +88,17 @@ EVENT_TEXT_CHARS = 400
 
 # 4-bit local generation defaults.
 _LOCAL_MAX_TOKENS = 220
+
+# Modal endpoint timeout (seconds). Cold starts — container boot + model
+# download/load on a fresh GPU — can exceed 120 s, so the client waits 300.
+_MODAL_TIMEOUT_S = 300
+
+# The most recent quantization disclosure from the Modal endpoint (e.g.
+# "nf4-4bit" or "bf16" — the precision the endpoint ACTUALLY used). Set per
+# successful call by _generate_modal; run_debate snapshots it into the result
+# so the UI can disclose what precision argued the debate. None until a modal
+# call succeeds, or when the endpoint omits the field.
+LAST_MODAL_QUANTIZATION: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -265,9 +281,19 @@ def _generate_modal(model_id: str, prompt: str, max_new_tokens: int) -> str:
     """POST one prompt to the Modal GPU endpoint; return the ``text`` field.
 
     The endpoint contract: POST MODAL_ENDPOINT json {model, prompt,
-    max_new_tokens} -> {"text": ...}. The constitution is prepended here so the
-    remote model receives the same constitutional frame as the local path.
+    max_new_tokens} with "Authorization: Bearer <MODAL_TOKEN>" when the
+    MODAL_TOKEN env var is set. Success (2xx) returns {"text": ...,
+    "quantization": ...}; the quantization disclosure (the precision the
+    endpoint actually used, e.g. "nf4-4bit" or "bf16") is recorded in
+    LAST_MODAL_QUANTIZATION for the UI. Non-2xx carries a JSON {"detail": ...}
+    (401 auth, 400 bad input) which is surfaced as a RuntimeError with that
+    message — never a raw HTTP traceback — so the UI shows a clean error.
+    The timeout is 300 s: a cold start (container boot + model load) can
+    exceed 120 s. The constitution is prepended here so the remote model
+    receives the same constitutional frame as the local path.
     """
+    global LAST_MODAL_QUANTIZATION
+
     endpoint = os.environ.get("MODAL_ENDPOINT")
     if not endpoint:
         raise EnvironmentError(
@@ -281,14 +307,32 @@ def _generate_modal(model_id: str, prompt: str, max_new_tokens: int) -> str:
             "backend='modal' requires requests. Install it with: pip install requests"
         ) from exc
 
+    headers: dict[str, str] = {}
+    token = os.environ.get("MODAL_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
     payload = {
         "model": model_id,
         "prompt": f"{CONSTITUTION}\n\n{prompt}",
         "max_new_tokens": max_new_tokens,
     }
-    resp = requests.post(endpoint, json=payload, timeout=180)
-    resp.raise_for_status()
+    resp = requests.post(
+        endpoint, json=payload, headers=headers, timeout=_MODAL_TIMEOUT_S
+    )
+    if not 200 <= resp.status_code < 300:
+        # The endpoint raises HTTPException(detail=...) on auth/input errors;
+        # surface that detail, falling back to the raw body when not JSON.
+        try:
+            detail = resp.json().get("detail") or resp.text
+        except Exception:
+            detail = resp.text
+        raise RuntimeError(f"Modal endpoint error ({resp.status_code}): {detail}")
+
     data = resp.json()
+    quantization = data.get("quantization")
+    if quantization:
+        LAST_MODAL_QUANTIZATION = str(quantization)
     return str(data["text"]).strip()
 
 
@@ -387,6 +431,58 @@ def compute_consensus(final_responses: list[dict]) -> dict:
     }
 
 
+# Agreement fraction required to CALL the verdict a consensus. With two models
+# a 1-1 split scores 0.5 agreement — that verdict comes from the safety-first
+# tie-break, not from the models agreeing — so the bar sits at 2/3.
+CONSENSUS_AGREEMENT_THRESHOLD = 2.0 / 3.0
+
+LABEL_CONSENSUS = "CONSENSUS"
+LABEL_NO_CONSENSUS = "NO CONSENSUS"
+
+
+def consensus_label(consensus: dict) -> dict:
+    """Label a consensus dict as CONSENSUS / NO CONSENSUS for the UI.
+
+    Pure presentation helper over compute_consensus's output (including the
+    cached substrate examples) — it never mutates or reshapes the consensus
+    dict. A verdict is a CONSENSUS only when agreement >= 2/3 of final-round
+    stances. Below that — e.g. a 1-1 tie at 0.5 — the verdict was produced by
+    the safety-first tie-break (ROUTE > CONDITIONAL > DEPLOY), not by genuine
+    agreement, and must be labeled NO CONSENSUS rather than rendered as a
+    consensus at 50%.
+
+    Args:
+        consensus: {verdict, vote_breakdown, agreement} as returned by
+            compute_consensus (or loaded from substrate/debate_examples.json).
+
+    Returns:
+        {"label": "CONSENSUS"|"NO CONSENSUS", "explanation": str}.
+    """
+    consensus = consensus or {}
+    verdict = str(consensus.get("verdict", DEFAULT_STANCE))
+    try:
+        agreement = float(consensus.get("agreement", 0.0))
+    except (TypeError, ValueError):
+        agreement = 0.0
+
+    if agreement >= CONSENSUS_AGREEMENT_THRESHOLD:
+        return {
+            "label": LABEL_CONSENSUS,
+            "explanation": (
+                f"{agreement:.0%} of final-round stances back {verdict} — at or "
+                "above the 2/3 consensus bar."
+            ),
+        }
+    return {
+        "label": LABEL_NO_CONSENSUS,
+        "explanation": (
+            f"Only {agreement:.0%} of final-round stances back {verdict} — below "
+            "the 2/3 consensus bar. The verdict stands via the safety-first "
+            "tie-break (ROUTE > CONDITIONAL > DEPLOY), not via consensus."
+        ),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Prompt construction
 # ---------------------------------------------------------------------------
@@ -472,10 +568,19 @@ def run_debate(
     Returns:
         {question, models, backend, rounds:[{round, round_type,
          responses:[{model, stance, text}]}], consensus:{verdict, vote_breakdown,
-         agreement}, final_verdict, elapsed_s}
+         agreement}, final_verdict, elapsed_s}. When backend="modal" and the
+        endpoint disclosed the precision it used, the result additionally
+        carries "quantization" (e.g. "nf4-4bit") so the UI can disclose it.
     """
+    global LAST_MODAL_QUANTIZATION
+
     start = time.perf_counter()
     rounds = max(1, int(rounds))
+    backend_norm = backend.lower().strip()
+    if backend_norm == "modal":
+        # Reset the disclosure so a stale value from a previous run can never
+        # leak into this result if every modal call here fails.
+        LAST_MODAL_QUANTIZATION = None
 
     round_records: list[dict] = []
     prev_responses: list[dict] = []
@@ -533,7 +638,7 @@ def run_debate(
     )
 
     elapsed_s = time.perf_counter() - start
-    return {
+    result = {
         "question": question,
         "models": list(models),
         "backend": backend,
@@ -542,6 +647,9 @@ def run_debate(
         "final_verdict": consensus["verdict"],
         "elapsed_s": elapsed_s,
     }
+    if backend_norm == "modal" and LAST_MODAL_QUANTIZATION:
+        result["quantization"] = LAST_MODAL_QUANTIZATION
+    return result
 
 
 # ---------------------------------------------------------------------------
