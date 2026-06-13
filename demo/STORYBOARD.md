@@ -41,7 +41,7 @@ Decision:             Route to safe baseline
 
 ### Shot 3 — Live screen tab: real-time scoring (25–40 s)
 **Screen**: Switch to "Live screen" tab.
-**Action**: Select a LOW-risk config (e.g. `Qwen/Qwen2.5-1.5B-Instruct`, base precision). Click "Run & Score".
+**Action**: Select a small baseline/candidate pair and click **Run live screen**.
 **Screen shows**: progress bar while probe set runs, then:
 ```
 Refusal-drift score:  0.03
@@ -67,7 +67,7 @@ ROC AUC = 0.8445  (leave-one-cell-out, 45 cells)
 ```
 Classifier 1:  Qwen3Guard-Gen-8B
 Classifier 2:  Granite-Guardian-3.3-8b
-Combined:      ~16B parameters  (within the <=32B cap)
+Each judge:    <=8.2B parameters  (each is below the 32B cap)
 
 Corpus:        40 prompts
 Agreement:     35 / 40
@@ -75,7 +75,7 @@ Cohen's kappa: 0.75  →  RELIABLE
 Split cases:   5  (flagged for human review)
 ```
 **Voiceover**: "Before you trust any safety screen, you need to ask: is the judge itself reliable? Two independent classifiers — Qwen3Guard and Granite Guardian — label the same 40-prompt corpus. Cohen's kappa of 0.75: RELIABLE. They agree on 35 of 40 and split on 5 — those 5 get flagged for human review."
-**Camera lingers** on the five split-case rows to show the "needs human review" label.
+**Camera lingers** on the disagreement count and per-zone chart, which identify where human review is needed without exposing held-internal prompts.
 
 ---
 
@@ -108,7 +108,7 @@ Signature:  INVALID  ✗
 ```
 Config:     MODERATE refusal-drift / MIXED judge agreement
             (genuinely contested — not a clear HIGH)
-Debate:     cached replay  (live run activates when GPU backend is wired)
+Debate:     cached replay + authenticated live Modal run
 ```
 **Screen shows replay unfolding**:
 ```
@@ -125,7 +125,7 @@ Round 2  (critique)
 Consensus:  CONDITIONAL
 Agreement:  0.67  (genuine 2/3 majority: 2 CONDITIONAL, 1 ROUTE)
 ```
-**Voiceover**: "For genuinely contested configs — MODERATE refusal-drift, mixed judge agreement — three small models argue it under a constitution. Qwen3-8B, Phi-4-mini, SmolLM3. Qwen3 opens with DEPLOY, then after the rebuttal round concedes all the way to ROUTE — you can watch a model change its mind. The other two hold CONDITIONAL, and the cohort reaches a genuine two-thirds consensus: CONDITIONAL — ship only behind a targeted safety probe. The debate is a cached replay; the live-run button activates when a GPU backend is wired."
+**Voiceover**: "For genuinely contested configs — MODERATE refusal-drift, mixed judge agreement — three small models argue it under a constitution. Qwen3-8B, Phi-4-mini, SmolLM3. Qwen3 opens with DEPLOY, then after the rebuttal round concedes all the way to ROUTE. The other two hold CONDITIONAL, and the cohort reaches a genuine two-thirds consensus: CONDITIONAL — ship only behind a targeted safety probe. The cached result keeps the demo reliable, and the live button runs the same flow on authenticated Modal GPUs."
 
 ---
 
@@ -141,7 +141,7 @@ Judge Agreement           →  kappa 0.75, RELIABLE
 Safety Certificate        →  Ed25519, tamper-evident
 Constitutional Debate     →  3 small models, consensus CONDITIONAL
 
-Every model: <=9B.  Entire pipeline: <=32B.
+Every individual model: <=8.2B.
 huggingface.co/spaces/Crusadersk/quantsafe-certifier
 ```
 **Voiceover**: "A complete safety-certification pipeline — static screen, live scoring, judge agreement, cryptographic attestation, constitutional debate — built entirely from small models. Every component is under 9B parameters. That's the whole point."
@@ -159,7 +159,7 @@ huggingface.co/spaces/Crusadersk/quantsafe-certifier
 | HIGH cells as share of configs | 9/45 = 20% | derived |
 | Gap recovery from routing HIGH cells | 76.17% | tr163_analysis.json → in_sample.high_band |
 | ROC AUC (LOOCV) | 0.8445 | tr163_analysis.json → out_of_sample_loocv.roc_auc |
-| Judge cohort size | ~16B (Qwen3Guard-Gen-8B + Granite-Guardian-3.3-8b) | model cards |
+| Judge model size | each <=8.2B (Qwen3Guard-Gen-8B + Granite-Guardian-3.3-8b) | model cards |
 | Corpus size | 40 prompts | judge_corpus.json |
 | Judge agreement count | 35/40 | judge_results.json |
 | Cohen's kappa | 0.7531, RELIABLE | judge_results.json |
@@ -169,4 +169,3 @@ huggingface.co/spaces/Crusadersk/quantsafe-certifier
 | Consensus | CONDITIONAL | debate_examples.json |
 | Consensus agreement | 0.67 (genuine 2/3 majority: 2 CONDITIONAL, 1 ROUTE) | debate_examples.json |
 | Largest single model in pipeline | 8.19B (Qwen3-8B / Qwen3Guard-Gen-8B) | model card |
-| Pipeline total (all models) | <=32B | derived |

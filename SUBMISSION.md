@@ -2,9 +2,10 @@
 
 ## 1. Three Required Deliverables
 
-- [ ] **Space URL** — `https://huggingface.co/spaces/Crusadersk/quantsafe-certifier`
+- [x] **Public staging Space URL** — `https://huggingface.co/spaces/Crusadersk/quantsafe-certifier`
 - [ ] **Demo video** — 60–90 s screen recording walking the five-screen tour (script in `demo/STORYBOARD.md`)
 - [ ] **Social post** — draft in `social/POST.md`; post to X and LinkedIn before submitting the form
+- [ ] **Official org** — membership is visible, but Space creation currently returns HTTP 403
 
 ---
 
@@ -28,10 +29,10 @@
 |---|---|---|
 | Refusal substrate (Score a config) | qwen2.5-1.5b, phi-2, llama3.2-1b, llama3.2-3b, qwen2.5-7b, mistral-7b | <=7B |
 | Live screen | Qwen2.5-1.5B-Instruct, Llama-3.2-1B-Instruct | <=1.5B |
-| Safety judges (Judge Agreement) | Qwen3Guard-Gen-8B, Granite-Guardian-3.3-8b | <=8.2B (combined ~16B, under 32B cap) |
+| Safety judges (Judge Agreement) | Qwen3Guard-Gen-8B, Granite-Guardian-3.3-8b | each <=8.2B |
 | Debate models (Constitutional Debate) | Qwen3-8B, Phi-4-mini-instruct, SmolLM3-3B | <=8.2B |
 
-All models pass the <=32B constraint. The full pipeline (screen + 2 judges + 3-model debate) is a complete safety-certification workflow built entirely from small models.
+All models pass the rule because each individual model is below 32B. The largest model in the workflow is approximately 8.2B.
 
 ### Gradio app
 
@@ -40,9 +41,10 @@ All models pass the <=32B constraint. The full pipeline (screen + 2 judges + 3-m
 
 ### HF Space
 
-- Repo is under `huggingface.co/spaces/Crusadersk/quantsafe-certifier`.
+- Current staging Space: `huggingface.co/spaces/Crusadersk/quantsafe-certifier`.
+- Final submission must be copied or moved to `build-small-hackathon` by an account/token with org write access.
 - `requirements.txt` lists `gradio`, `numpy`, and all runtime deps.
-- Hardware tier: CPU Basic covers substrate lookup + live-CPU tab. GPU Small needed if Modal backend is wired for live debate.
+- Hardware tier: CPU Basic covers substrate lookup and the live CPU tab; authenticated Modal GPU endpoints power remote debate/judge inference.
 
 ---
 
@@ -66,20 +68,21 @@ Note: `rtsi_core.py` is the vendored internal scorer — excluded as a known int
 
 ---
 
-## 5. Flip the Space PUBLIC Before Submitting
+## 5. Move the Final Space into the Official Organization
 
-The Space is currently **private**. Before submitting the form:
+The staging Space is public. The remaining eligibility blocker is organization write access:
 
-1. Go to `https://huggingface.co/spaces/Crusadersk/quantsafe-certifier` -> Settings.
-2. Change visibility from **Private** to **Public**.
-3. Confirm the Space URL resolves and all tabs load without authentication.
-4. Do not submit the form until the Space is publicly reachable by judges.
+1. Ask an organization owner to grant a role/token with Space creation rights, or ask them to move the staging Space.
+2. Create or transfer `build-small-hackathon/quantsafe-certifier`.
+3. Confirm the organization-owned Space is public, reaches `RUNNING`, and every tab loads.
+4. Update README, social copy, and demo overlays to the organization URL.
+5. Do not submit until the public demo-video and social-post URLs are also in README.
 
 ---
 
-## 6. Modal Flip Runbook (live debate, no code change)
+## 6. Modal Deployment Runbook
 
-The Constitutional Debate tab runs a cached replay by default. To activate the live-run button:
+The live backend is currently deployed and wired. Use this runbook after backend changes:
 
 1. Deploy `modal_app.py` to Modal:
    ```bash
@@ -91,7 +94,7 @@ The Constitutional Debate tab runs a cached replay by default. To activate the l
    MODAL_ENDPOINT=<the endpoint URL from step 2>
    ```
 4. Restart the Space (Settings -> Factory reboot).
-5. The "Run live debate" button is now active — no code change required.
+5. Confirm the "Run live debate" button is active and run an authenticated smoke request.
 
 Note: the cached example (Qwen3-8B + Phi-4-mini-instruct + SmolLM3-3B, MODERATE/MIXED config, CONDITIONAL at 0.67 agreement) plays back correctly without Modal.
 

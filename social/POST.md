@@ -51,7 +51,7 @@
 >
 > Three small models — Qwen3-8B, Phi-4-mini-instruct, SmolLM3-3B — argue "deploy or route" over rounds. One opens DEPLOY, swings to ROUTE after rebuttal; the cohort lands on CONDITIONAL.
 >
-> Cached real result: consensus CONDITIONAL at 0.67 agreement (a genuine 2/3 majority). Live-run button activates when the @modal_labs GPU backend is wired.
+> Cached real result: consensus CONDITIONAL at 0.67 agreement (a genuine 2/3 majority). The live run uses authenticated, per-model @modal_labs GPU containers.
 >
 > The entire pipeline: screening + two judges + a 3-model debate = zero models above 9B. 4/4
 
@@ -77,7 +77,7 @@ Two independent safety classifiers — Qwen3Guard-Gen-8B and Granite-Guardian-3.
 Ed25519-signed certificate over the screen verdict (PASS / REVIEW / ROUTE) and the kappa. Verifiable with the included public key. A built-in tamper test flips a field and shows the signature failing — cryptographically tamper-evident safety attestation. This is the part of the pipeline I haven't seen elsewhere: not just a score, but a signed, portable proof that a specific config was evaluated and by what criteria.
 
 **Constitutional Debate**
-For configs that land in the genuinely contested middle — MODERATE refusal drift AND mixed judge agreement — three small models (Qwen3-8B, Phi-4-mini-instruct, SmolLM3-3B) debate "deploy or route to a safe baseline" under a constitution and reach consensus. Cached real result: one model opens DEPLOY and swings to ROUTE after rebuttal, while the other two hold CONDITIONAL — the cohort converges on CONDITIONAL at 0.67 agreement (a genuine 2/3 majority). The live-run button activates when the Modal GPU backend is wired.
+For configs that land in the genuinely contested middle — MODERATE refusal drift AND mixed judge agreement — three small models (Qwen3-8B, Phi-4-mini-instruct, SmolLM3-3B) debate "deploy or route to a safe baseline" under a constitution and reach consensus. Cached real result: one model opens DEPLOY and swings to ROUTE after rebuttal, while the other two hold CONDITIONAL — the cohort converges on CONDITIONAL at 0.67 agreement (a genuine 2/3 majority). The live run fans model turns across authenticated, per-model Modal GPU containers.
 
 The entire pipeline — screening, two judges, and a three-model constitutional debate — runs on models no larger than 9B. That is the thesis: real multi-model safety orchestration that fits inside a small-model budget, solving a real problem for anyone deploying quantized local models.
 

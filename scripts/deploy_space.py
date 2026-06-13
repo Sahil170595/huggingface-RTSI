@@ -1,6 +1,6 @@
 """scripts/deploy_space.py — push the repo to the HF Space + set secrets.
 
-Uploads the working tree to huggingface.co/spaces/Crusadersk/quantsafe-certifier
+Uploads the working tree to the public staging Space
 (respecting .gitignore-style ignore patterns) and, when the corresponding
 environment variables are present, sets the Space secrets the app needs:
 
@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import sys
 from pathlib import Path
 
 from huggingface_hub import HfApi
@@ -34,6 +33,7 @@ IGNORE = [
     ".github/*",
     ".claude/*",
     ".pytest_cache/*",
+    ".mypy_cache/*",
     ".benchmarks/*",
     # SECURITY: never upload local secret material to the public Space.
     ".modal_token_local.txt",
@@ -41,6 +41,7 @@ IGNORE = [
     ".env",
     "*.pem",
     ".playwright-mcp/*",
+    ".playwright-cli/*",
     "_applog.txt",
     "*.log",
     "scripts/*",  # regen/deploy tooling is dev-only; the Space doesn't run it
@@ -77,7 +78,7 @@ def main() -> int:
             repo_type="space",
             folder_path=str(ROOT),
             ignore_patterns=IGNORE,
-            commit_message="Tier 2-4: SOTA cohort, correctness fixes, gradio 5.50.0",
+            commit_message="Audit: reproducible models, parallel Modal debate, submission polish",
         )
         print("Upload complete.")
 

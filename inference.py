@@ -22,6 +22,8 @@ from __future__ import annotations
 import os
 import threading
 
+from model_revisions import model_revision
+
 # ---------------------------------------------------------------------------
 # CPU backend — lazy-load LRU cache, bounded so fp32 weights can't OOM the
 # 16 GB CPU Basic Space. At most the CURRENT run's (baseline, candidate) pair
@@ -44,9 +46,11 @@ def _load_cpu_model(model_id: str) -> tuple:
     """
     from transformers import AutoModelForCausalLM, AutoTokenizer  # lazy import
     import torch
-    tok = AutoTokenizer.from_pretrained(model_id)
+    revision = model_revision(model_id)
+    tok = AutoTokenizer.from_pretrained(model_id, revision=revision)
     mdl = AutoModelForCausalLM.from_pretrained(
         model_id,
+        revision=revision,
         # Keep float32 on CPU for the 1-1.5B live models: it is the numerically
         # safe default and fits comfortably once the cache is bounded. Do NOT
         # switch dtype silently — drift numbers must stay comparable.
@@ -198,7 +202,7 @@ def _load_count_tokenizer(model_id: str):
     if model_id in _count_tok_cache:
         return _count_tok_cache[model_id]
     from transformers import AutoTokenizer  # lazy import
-    tok = AutoTokenizer.from_pretrained(model_id)
+    tok = AutoTokenizer.from_pretrained(model_id, revision=model_revision(model_id))
     _count_tok_cache[model_id] = tok
     return tok
 

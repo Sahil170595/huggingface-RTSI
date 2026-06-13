@@ -38,7 +38,10 @@ import logging
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable
+
+from model_revisions import model_revision
 
 logger = logging.getLogger(__name__)
 
@@ -233,9 +236,11 @@ def _load_local(model_id: str):
         bnb_4bit_compute_dtype=torch.float16,
         bnb_4bit_use_double_quant=True,
     )
-    tok = AutoTokenizer.from_pretrained(model_id)
+    revision = model_revision(model_id)
+    tok = AutoTokenizer.from_pretrained(model_id, revision=revision)
     mdl = AutoModelForCausalLM.from_pretrained(
         model_id,
+        revision=revision,
         quantization_config=quant_config,
         device_map="cuda",
         torch_dtype=torch.float16,
@@ -592,8 +597,7 @@ def run_debate(
             {"type": "round_start", "round": r, "round_type": round_type, "models": list(models)},
         )
 
-        responses: list[dict] = []
-        for model_id in models:
+        def _run_model(model_id: str) -> dict:
             if r == 1:
                 prompt = _build_propose_prompt(question)
             else:
@@ -608,20 +612,45 @@ def run_debate(
                 text = f"[generation error: {exc}]"
 
             stance = parse_stance(text)
-            record = {"model": model_id, "stance": stance, "text": text}
-            responses.append(record)
+            return {"model": model_id, "stance": stance, "text": text}
 
+        def _emit_response(record: dict) -> None:
             _emit(
                 on_event,
                 {
                     "type": "model_response",
                     "round": r,
                     "round_type": round_type,
-                    "model": model_id,
-                    "stance": stance,
-                    "text": text[:EVENT_TEXT_CHARS],
+                    "model": record["model"],
+                    "stance": record["stance"],
+                    "text": record["text"][:EVENT_TEXT_CHARS],
                 },
             )
+
+        # Remote model calls are independent within a round. Fan them out so
+        # Modal can use its per-model container pools concurrently. Keep the
+        # local backend sequential because those models share one CUDA device.
+        if backend_norm in {"modal", "hf"} and len(models) > 1:
+            responses_by_index: dict[int, dict] = {}
+            with ThreadPoolExecutor(
+                max_workers=len(models), thread_name_prefix="quantsafe-debate"
+            ) as executor:
+                futures = {
+                    executor.submit(_run_model, model_id): index
+                    for index, model_id in enumerate(models)
+                }
+                for future in as_completed(futures):
+                    index = futures[future]
+                    record = future.result()
+                    responses_by_index[index] = record
+                    _emit_response(record)
+            responses = [responses_by_index[index] for index in range(len(models))]
+        else:
+            responses = []
+            for model_id in models:
+                record = _run_model(model_id)
+                responses.append(record)
+                _emit_response(record)
 
         round_records.append({"round": r, "round_type": round_type, "responses": responses})
         prev_responses = responses

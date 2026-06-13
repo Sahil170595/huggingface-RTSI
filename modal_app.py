@@ -34,7 +34,7 @@ GPU:
     Default "a10g" (24 GB VRAM) — fits Qwen-7B + Mistral-7B comfortably in fp16.
     Swap to "t4" for the 0.5B / 1.5B models if you want to save credits.
 
-=== DEPLOY RUNBOOK (run these steps when Modal credits are approved) ===
+=== DEPLOY RUNBOOK (run after backend or model changes) ===
 
     1.  Install the Modal client + fastapi (do this once; fastapi is imported
         at module level for the endpoint's auth header, so the deploy machine
@@ -90,6 +90,8 @@ from typing import Any
 # machine: `pip install fastapi`. It is NOT a dependency of the modal client.
 import fastapi
 import modal
+
+from model_revisions import model_revision
 
 # NOTE: do NOT add `from __future__ import annotations` here — it stringizes the
 # class annotations and breaks modal.parameter() type validation (model_id: str
@@ -153,6 +155,7 @@ _image = (
         "protobuf>=4.25.0",       # required by sentencepiece wheels
         "fastapi[standard]>=0.110.0",  # Modal 1.x web endpoints are FastAPI-backed
     )
+    .add_local_python_source("model_revisions")
 )
 
 app = modal.App("debate-backend", image=_image)
@@ -212,9 +215,11 @@ class DebateInferenceServer:
             else None
         )
 
-        self.tok = AutoTokenizer.from_pretrained(self.model_id)
+        revision = model_revision(self.model_id)
+        self.tok = AutoTokenizer.from_pretrained(self.model_id, revision=revision)
         self.mdl = AutoModelForCausalLM.from_pretrained(
             self.model_id,
+            revision=revision,
             quantization_config=bnb_config,
             torch_dtype=torch.float16,
             device_map="auto",

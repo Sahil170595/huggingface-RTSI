@@ -254,7 +254,7 @@ class TestLiveGate:
     def test_disabled_note_mentions_modal_endpoint(self):
         note = app._debate_disabled_note()
         assert "MODAL_ENDPOINT" in note
-        assert "pending Modal credit approval" in note
+        assert "authenticated Modal GPU backend" in note
 
     def test_run_live_debate_yields_disabled_note_without_endpoint(self, monkeypatch):
         monkeypatch.delenv(app.MODAL_ENDPOINT_ENV, raising=False)

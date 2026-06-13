@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -383,6 +384,40 @@ class TestRunDebateContract:
         assert "generation error" in bad_resp["text"]
         # The healthy model still voted ROUTE; consensus is well-formed.
         assert out["final_verdict"] in STANCES
+
+    def test_remote_models_run_concurrently_but_return_in_model_order(self, monkeypatch):
+        barrier = threading.Barrier(3)
+
+        def _parallel_generate(model_id, prompt, backend="local", max_new_tokens=220):
+            barrier.wait(timeout=2)
+            return f"STANCE: ROUTE\n{model_id}"
+
+        monkeypatch.setattr(debate, "generate", _parallel_generate)
+        models = ["m1", "m2", "m3"]
+        out = run_debate("q", models=models, backend="modal", rounds=1)
+
+        assert [record["model"] for record in out["rounds"][0]["responses"]] == models
+        assert all(
+            "generation error" not in record["text"]
+            for record in out["rounds"][0]["responses"]
+        )
+
+    def test_local_models_remain_sequential(self, monkeypatch):
+        active = 0
+        max_active = 0
+        lock = threading.Lock()
+
+        def _sequential_generate(model_id, prompt, backend="local", max_new_tokens=220):
+            nonlocal active, max_active
+            with lock:
+                active += 1
+                max_active = max(max_active, active)
+                active -= 1
+            return "STANCE: ROUTE"
+
+        monkeypatch.setattr(debate, "generate", _sequential_generate)
+        run_debate("q", models=["m1", "m2", "m3"], backend="local", rounds=1)
+        assert max_active == 1
 
 
 class TestRunDebateOnEvent:

@@ -25,13 +25,12 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+import cert_signer
 import gradio as gr
 import pandas as pd
 import plotly.graph_objects as go
 
-from rtsi_core import classify_risk
 from features import live_rtsi, load_substrate_feature_rows
-import cert_signer
 
 # ---------------------------------------------------------------------------
 # Paths + startup data load
@@ -1003,11 +1002,9 @@ def _debate_disabled_note() -> str:
         '<div style="margin-top:8px;padding:12px 16px;border-radius:10px;'
         'background:#F4EEE0;border:1px solid #D8C28A;color:#6E5320;'
         'font-size:14px;line-height:1.5;">'
-        "⏳ <b>Live debate runs on a Modal GPU backend — pending Modal credit "
-        "approval.</b> The engine and adapter are built and tested; this goes "
-        "live the moment the backend is wired (set the "
+        "<b>Live debate requires the authenticated Modal GPU backend.</b> Set the "
         "<code>MODAL_ENDPOINT</code> and <code>MODAL_TOKEN</code> secrets — "
-        "the endpoint rejects unauthenticated requests). Until then, the "
+        "the endpoint rejects unauthenticated requests. Until then, the "
         "cached example above shows a real debate transcript."
     ) + "</div>"
 
@@ -1506,11 +1503,15 @@ theme = gr.themes.Base(
     table_odd_background_fill="#FAF9F6",
 )
 
-# Type, tab bar, and ground tuning the theme tokens can't reach. Fonts loaded
-# via @import so Fraunces (display) is available to inline-styled HTML + plotly.
-_EDITORIAL_CSS = """
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Hanken+Grotesk:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500&display=swap');
+# Type, tab bar, and ground tuning the theme tokens cannot reach. Fonts are
+# loaded in the document head because constructable stylesheets reject @import.
+_EDITORIAL_HEAD = """
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Hanken+Grotesk:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet">
+"""
 
+_EDITORIAL_CSS = """
 .gradio-container, .gradio-container .prose { background:#FAF9F6 !important; }
 
 /* Serif display for the header + every markdown heading. */
@@ -1563,26 +1564,49 @@ _EDITORIAL_CSS = """
   font-family:'Hanken Grotesk', sans-serif !important;
   color:#2A2722;
 }
+
+/* Keep the native tab overflow affordance visible on narrow screens. */
+.gradio-container .overflow-menu button {
+  color:#7B2D26 !important;
+  background:#FAF9F6 !important;
+}
+
+@media (max-width: 640px) {
+  .qs-header { padding:12px 0 2px !important; }
+  .qs-header-kicker { font-size:10px !important; letter-spacing:.18em !important; }
+  .qs-header-title { font-size:36px !important; margin-top:3px !important; }
+  .qs-header-subtitle { font-size:17px !important; }
+  .qs-header-rule { margin:10px auto 9px !important; }
+  .qs-header-pitch { font-size:13px !important; line-height:1.42 !important; }
+  .gradio-container .tab-nav button,
+  .gradio-container button[role="tab"] { padding:9px 11px !important; }
+}
 """
 
-with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
-               title="QuantSafe — will this quant jailbreak your model?") as demo:
+with gr.Blocks(
+    theme=theme,
+    css=_EDITORIAL_CSS,
+    head=_EDITORIAL_HEAD,
+    analytics_enabled=False,
+    title="QuantSafe — will this quant jailbreak your model?",
+) as demo:
     gr.HTML(
-        '<div style="text-align:center;padding:22px 0 6px;">'
-        '<div style="font-family:\'Hanken Grotesk\',sans-serif;font-size:12px;'
+        '<div class="qs-header" style="text-align:center;padding:22px 0 6px;">'
+        '<div class="qs-header-kicker" style="font-family:\'Hanken Grotesk\',sans-serif;font-size:12px;'
         'font-weight:600;letter-spacing:.24em;text-transform:uppercase;'
         'color:#7B2D26;">Quantization Safety Screen</div>'
         '<div class="qs-header-title" style="font-family:\'Fraunces\',Georgia,serif;'
         'font-size:44px;font-weight:600;color:#1A1A1A;line-height:1.05;'
         'letter-spacing:-.02em;margin:6px 0 0;">QuantSafe</div>'
-        '<div style="font-family:\'Fraunces\',Georgia,serif;font-style:italic;'
+        '<div class="qs-header-subtitle" style="font-family:\'Fraunces\',Georgia,serif;font-style:italic;'
         'font-weight:400;font-size:20px;color:#7B2D26;margin-top:3px;">'
         'will this quant jailbreak your model?</div>'
-        '<div style="width:56px;height:1px;background:#C9A24B;'
+        '<div class="qs-header-rule" style="width:56px;height:1px;background:#C9A24B;'
         'margin:16px auto 14px;"></div>'
-        f'<div style="font-family:\'Hanken Grotesk\',sans-serif;font-size:15px;'
+        f'<div class="qs-header-pitch" style="font-family:\'Hanken Grotesk\',sans-serif;font-size:15px;'
         f'color:#4A453E;max-width:740px;margin:0 auto;line-height:1.62;">{_PITCH}</div>'
-        "</div>"
+        "</div>",
+        padding=False,
     )
 
     with gr.Tabs() as tabs_root:
@@ -1592,7 +1616,7 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
                 "Look up any measured **(model, quant)** cell. No inference — "
                 "this reads the validated 45-cell substrate."
             )
-            gr.HTML(_killer_cells_banner())
+            gr.HTML(_killer_cells_banner(), padding=False)
             # Pre-score the headline cell so the panel lands populated, not blank.
             _seed_badge, _seed_rec = score_config(HEADLINE_MODEL, HEADLINE_QUANT)
             with gr.Row():
@@ -1600,8 +1624,8 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
                     model_dd = gr.Dropdown(MODELS, label="Model", value=HEADLINE_MODEL)
                     quant_dd = gr.Dropdown(QUANTS, label="Quantization", value=HEADLINE_QUANT)
                     score_btn = gr.Button("Score this config", variant="primary")
-                    badge_html = gr.HTML(_seed_badge)
-                    rec_html = gr.HTML(_seed_rec)
+                    badge_html = gr.HTML(_seed_badge, padding=False)
+                    rec_html = gr.HTML(_seed_rec, padding=False)
                 with gr.Column(scale=2):
                     pareto_plot = gr.Plot(PARETO_FIG)
             heatmap_plot = gr.Plot(HEATMAP_FIG)
@@ -1620,7 +1644,8 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
                 'color:#5C211C;font-size:13px;margin-bottom:8px;">'
                 "🔒 Probe prompts are held internally and never displayed "
                 "(safety policy). Only aggregate features and the score are shown."
-                "</div>"
+                "</div>",
+                padding=False,
             )
             with gr.Row():
                 base_dd = gr.Dropdown(LIVE_MODELS, label="Baseline model",
@@ -1635,9 +1660,9 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
                       "Bearer-token auth, cold start can take ~2 min)"),
             )
             live_btn = gr.Button("Run live screen", variant="primary")
-            live_badge = gr.HTML()
+            live_badge = gr.HTML(padding=False)
             live_plot = gr.Plot(_empty_delta_fig)
-            _live_sink = gr.HTML(visible=False)
+            _live_sink = gr.HTML(visible=False, padding=False)
 
             live_btn.click(
                 run_live,
@@ -1652,13 +1677,16 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
         # ----- Judge Agreement (display-only over precomputed results) -------
         with gr.Tab("Judge Agreement", id="judges"):
             if not JUDGE_RESULTS:
-                gr.HTML(_msg(
-                    "<b>Judge agreement is not yet computed.</b> The precomputed "
-                    "results cache is unavailable here. Live judging runs on a GPU "
-                    "backend; once a run lands, this screen shows the inter-judge "
-                    "agreement (κ) and where the judges split.",
-                    color="#b45309",
-                ))
+                gr.HTML(
+                    _msg(
+                        "<b>Judge agreement is not yet computed.</b> The precomputed "
+                        "results cache is unavailable here. Live judging runs on a GPU "
+                        "backend; once a run lands, this screen shows the inter-judge "
+                        "agreement (κ) and where the judges split.",
+                        color="#b45309",
+                    ),
+                    padding=False,
+                )
             else:
                 _ag = JUDGE_RESULTS.get("agreement", {}) or {}
                 _judges = JUDGE_RESULTS.get("judges", []) or []
@@ -1670,12 +1698,13 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
                 _brk = _agreement_breakdown(_judges, _zones)
 
                 # (1) Headline κ + color-coded band badge.
-                gr.HTML(_kappa_badge(_kappa, _band))
+                gr.HTML(_kappa_badge(_kappa, _band), padding=False)
                 gr.HTML(
                     f'<div style="margin-top:6px;font-size:14px;color:#4A453E;">'
                     f"<b>{_n_judges} independent safety classifiers</b> · "
                     f"<b>{_n_items} prompts</b> · Cohen's kappa"
-                    f"</div>"
+                    f"</div>",
+                    padding=False,
                 )
 
                 # (4) Honest framing — interpolated from JUDGE_RESULTS, never
@@ -1721,7 +1750,8 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
                     f'font-size:15px;color:#4A453E;">'
                     f"The judges <b>agree on {_agree}/{_total}</b> and "
                     f"<b>split on {_disagree}/{_total}</b> cases."
-                    f"</div>"
+                    f"</div>",
+                    padding=False,
                 )
                 gr.Plot(build_disagreement_by_zone_fig(_brk["by_zone"]))
 
@@ -1732,7 +1762,8 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
                     "🔒 Verdicts are precomputed over a fixed internal probe corpus "
                     "(held internally, never displayed). Live judging runs on a GPU "
                     "backend."
-                    "</div>"
+                    "</div>",
+                    padding=False,
                 )
 
         # ----- Safety Certificate (Ed25519-signed attestation) ---------------
@@ -1769,7 +1800,8 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
                 "<b>deploy vs route</b> over rounds, then a consensus verdict decides. "
                 "A <b>PASS</b> (LOW) ships and a <b>ROUTE</b> (clear HIGH) is foregone — "
                 "neither needs a debate."
-                "</div>"
+                "</div>",
+                padding=False,
             )
 
             # Holds the genuine signed cert between button clicks.
@@ -1784,8 +1816,8 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
                 tamper_btn = gr.Button("Tamper test", variant="stop")
                 resign_btn = gr.Button("Foreign re-sign test", variant="stop")
 
-            cert_verdict_html = gr.HTML()
-            cert_verify_html = gr.HTML()
+            cert_verdict_html = gr.HTML(padding=False)
+            cert_verify_html = gr.HTML(padding=False)
             cert_code = gr.Code(label="Signed certificate (canonical JSON)", language="json")
 
             gr.HTML(
@@ -1795,7 +1827,8 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
                 "verdict — never any probe prompt or model output. The signed "
                 "payload is canonical JSON (sorted keys) of every field except the "
                 "public key and signature."
-                "</div>"
+                "</div>",
+                padding=False,
             )
 
             issue_btn.click(
@@ -1828,12 +1861,13 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
                 "Stances: <b>DEPLOY</b> (ship it) · <b>ROUTE</b> (fall back to the "
                 "safe baseline) · <b>CONDITIONAL</b> (ship only behind a targeted "
                 "safety probe)."
-                "</div>"
+                "</div>",
+                padding=False,
             )
 
             gr.Markdown("### Cached debate (replay)")
             # Rendered once at build time from the cached example, if present.
-            gr.HTML(_render_debate(DEBATE_EXAMPLE))
+            gr.HTML(_render_debate(DEBATE_EXAMPLE), padding=False)
 
             gr.Markdown("### Run live debate")
             # Both secrets are required: the endpoint 401s requests without the
@@ -1848,8 +1882,8 @@ with gr.Blocks(theme=theme, css=_EDITORIAL_CSS,
             )
             # When Modal is unwired the button is disabled; explain why up-front.
             if not _modal_wired:
-                gr.HTML(_debate_disabled_note())
-            debate_live_html = gr.HTML()
+                gr.HTML(_debate_disabled_note(), padding=False)
+            debate_live_html = gr.HTML(padding=False)
 
             debate_live_btn.click(
                 run_live_debate,

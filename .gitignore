@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.mypy_cache/
 .benchmarks/
 .claude/
 _applog.txt
@@ -14,3 +15,4 @@ _applog.txt
 transformers_cache/
 hf_cache/
 .cert_key_local.txt
+.playwright-cli/

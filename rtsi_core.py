@@ -53,7 +53,7 @@ import json
 import sys
 import warnings
 from pathlib import Path
-from typing import Iterable, Mapping, Sequence
+from typing import Mapping, Sequence
 
 import numpy as np
 
@@ -248,7 +248,6 @@ def loocv_recall(
         fold_weights = fit_weights(train_rows, train_refusals)
 
         # Recompute min-max normalization on training fold only
-        for_norm: dict[str, np.ndarray] = {}
         held_normed: dict[str, float] = {}
         for feat in RTSI_FEATURES:
             train_abs = np.abs(np.array([r.get(feat, 0.0) for r in train_rows], dtype=np.float64))
