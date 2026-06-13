@@ -29,13 +29,13 @@
 
 **Tweet 2 / 4 — The screens**
 
-> Four tabs. One pipeline. All <=9B models.
+> Five screens. One pipeline. All <=9B models.
 >
 > Refusal Stability: 45 measured (model, quant) cells, ROC AUC 0.84. Route just 20% of configs, recover 76% of the refusal-rate gap.
 >
 > Live Screen: score YOUR config in real time — no uploads, runs transformers directly in the Space.
 >
-> Judge Agreement: two independent classifiers (Llama-Guard-3-8B + ShieldGemma-9b), Cohen's kappa = 0.74. Flags the 4/40 contested cases for human review. 2/4
+> Judge Agreement: two independent classifiers (Qwen3Guard-Gen-8B + Granite-Guardian-3.3-8b), Cohen's kappa = 0.75. Flags the 5/40 contested cases for human review. 2/4
 
 **Tweet 3 / 4 — The cryptographic angle**
 
@@ -49,9 +49,9 @@
 
 > Contested configs (MODERATE refusal + mixed judge agreement) go to a constitutional debate.
 >
-> Three small models — Qwen2.5-1.5B, Qwen2.5-0.5B, SmolLM2-1.7B — argue "deploy or route" over rounds and reach consensus.
+> Three small models — Qwen3-8B, Phi-4-mini-instruct, SmolLM3-3B — argue "deploy or route" over rounds. One opens DEPLOY, swings to ROUTE after rebuttal; the cohort lands on CONDITIONAL.
 >
-> Cached real result: consensus ROUTE at 0.67 agreement. Live-run button activates when the @modal_labs GPU backend is wired.
+> Cached real result: consensus CONDITIONAL at 0.67 agreement (a genuine 2/3 majority). Live-run button activates when the @modal_labs GPU backend is wired.
 >
 > The entire pipeline: screening + two judges + a 3-model debate = zero models above 9B. 4/4
 
@@ -65,19 +65,19 @@ A quantized model can look fine on every benchmark while silently losing its abi
 
 phi-2 + GPTQ dropped 90 percentage points of refusal rate. qwen2.5-1.5b + GPTQ scored the highest refusal-drift risk in a 45-cell dataset covering 6 models and 8 quantization levels. Standard evaluations flagged neither.
 
-**QuantSafe Certifier** is a Gradio Space that runs a complete safety-certification workflow for any (model, quantization) config — four tabs, all on models no larger than 9B.
+**QuantSafe Certifier** is a Gradio Space that runs a complete safety-certification workflow for any (model, quantization) config — five screens, all on models no larger than 9B.
 
 **Refusal Stability Screen**
 Scores how much a quantization destabilizes a model's refusal behavior. 45 measured cells, ROC AUC 0.84 (leave-one-cell-out). Routing the 9 HIGH-risk cells — just 20% of configs — recovers 76% of the refusal-rate gap. A Live Screen tab scores your own config in real time using transformers directly in the Space; nothing is uploaded.
 
 **Judge Agreement**
-Two independent safety classifiers — Llama-Guard-3-8B and ShieldGemma-9b — label a 40-prompt internal corpus. Inter-judge Cohen's kappa = 0.74, which is reliable agreement. They agree on 36/40 and split on 4. The point is not that either judge is definitive; it is that cross-checking two independent classifiers MEASURES whether the judge cohort can be trusted for this config, and honestly surfaces the contested cases that need a human.
+Two independent safety classifiers — Qwen3Guard-Gen-8B and Granite-Guardian-3.3-8b — label a 40-prompt internal corpus. Inter-judge Cohen's kappa = 0.75, which is reliable agreement. They agree on 35/40 and split on 5. The point is not that either judge is definitive; it is that cross-checking two independent classifiers MEASURES whether the judge cohort can be trusted for this config, and honestly surfaces the contested cases that need a human.
 
 **Safety Certificate**
 Ed25519-signed certificate over the screen verdict (PASS / REVIEW / ROUTE) and the kappa. Verifiable with the included public key. A built-in tamper test flips a field and shows the signature failing — cryptographically tamper-evident safety attestation. This is the part of the pipeline I haven't seen elsewhere: not just a score, but a signed, portable proof that a specific config was evaluated and by what criteria.
 
 **Constitutional Debate**
-For configs that land in the genuinely contested middle — MODERATE refusal drift AND mixed judge agreement — three small models (Qwen2.5-1.5B, Qwen2.5-0.5B, SmolLM2-1.7B) debate "deploy or route to a safe baseline" under a constitution and reach consensus. Cached real result: consensus ROUTE at 0.67 agreement after multi-round debate. The live-run button activates when the Modal GPU backend is wired.
+For configs that land in the genuinely contested middle — MODERATE refusal drift AND mixed judge agreement — three small models (Qwen3-8B, Phi-4-mini-instruct, SmolLM3-3B) debate "deploy or route to a safe baseline" under a constitution and reach consensus. Cached real result: one model opens DEPLOY and swings to ROUTE after rebuttal, while the other two hold CONDITIONAL — the cohort converges on CONDITIONAL at 0.67 agreement (a genuine 2/3 majority). The live-run button activates when the Modal GPU backend is wired.
 
 The entire pipeline — screening, two judges, and a three-model constitutional debate — runs on models no larger than 9B. That is the thesis: real multi-model safety orchestration that fits inside a small-model budget, solving a real problem for anyone deploying quantized local models.
 

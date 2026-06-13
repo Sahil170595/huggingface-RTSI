@@ -3,20 +3,20 @@
 ## 1. Three Required Deliverables
 
 - [ ] **Space URL** — `https://huggingface.co/spaces/Crusadersk/quantsafe-certifier`
-- [ ] **Demo video** — 60–90 s screen recording walking the four-tab tour (script in `demo/STORYBOARD.md`)
+- [ ] **Demo video** — 60–90 s screen recording walking the five-screen tour (script in `demo/STORYBOARD.md`)
 - [ ] **Social post** — draft in `social/POST.md`; post to X and LinkedIn before submitting the form
 
 ---
 
-## 2. Four-Screen Tour (one line each)
+## 2. Five-Screen Tour (one line each)
 
 | Tab | What it shows | Headline number |
 |---|---|---|
 | **Score a config** | Static refusal-drift lookup across 45 measured (model, quant) cells — 23 LOW / 13 MODERATE / 9 HIGH | AUC 0.8445 |
 | **Live screen** | Runs a small model live (transformers) and computes the same refusal-drift score in real time | 9 HIGH cells = 20% of configs, recovers 76.17% of the refusal-rate gap |
-| **Judge Agreement** | Two independent safety classifiers label a 40-prompt corpus; Cohen's kappa measures whether the judge cohort can be trusted | kappa = 0.74 (RELIABLE); 36/40 agree, 4 split |
-| **Safety Certificate** | Ed25519-signed certificate over the screen results — verdict (PASS / REVIEW / ROUTE) + kappa; tamper test flips a field and the signature catches it | cryptographically tamper-evident |
-| **Constitutional Debate** | Small models argue "deploy or route" on MODERATE / MIXED configs under a constitution and reach consensus | cached example: 3 models -> ROUTE at 0.67 agreement |
+| **Judge Agreement** | Two independent safety classifiers label a 40-prompt corpus; Cohen's kappa measures whether the judge cohort can be trusted | kappa = 0.75 (RELIABLE); 35/40 agree, 5 split |
+| **Safety Certificate** | Ed25519-signed certificate over the screen results — verdict (PASS / REVIEW / ROUTE) + kappa, verified against this Space's pinned issuer key; tamper test flips a field and the signature catches it | tamper-evident |
+| **Constitutional Debate** | Small models argue "deploy or route" on MODERATE / MIXED configs under a constitution and reach consensus | cached example: 3 models -> CONDITIONAL at 0.67 agreement (genuine 2/3 majority) |
 
 ---
 
@@ -28,8 +28,8 @@
 |---|---|---|
 | Refusal substrate (Score a config) | qwen2.5-1.5b, phi-2, llama3.2-1b, llama3.2-3b, qwen2.5-7b, mistral-7b | <=7B |
 | Live screen | Qwen2.5-1.5B-Instruct, Llama-3.2-1B-Instruct | <=1.5B |
-| Safety judges (Judge Agreement) | Llama-Guard-3-8B, ShieldGemma-9b | <=9B (combined ~17B, under 32B cap) |
-| Debate models (Constitutional Debate) | Qwen2.5-1.5B, Qwen2.5-0.5B, SmolLM2-1.7B | <=1.7B |
+| Safety judges (Judge Agreement) | Qwen3Guard-Gen-8B, Granite-Guardian-3.3-8b | <=8.2B (combined ~16B, under 32B cap) |
+| Debate models (Constitutional Debate) | Qwen3-8B, Phi-4-mini-instruct, SmolLM3-3B | <=8.2B |
 
 All models pass the <=32B constraint. The full pipeline (screen + 2 judges + 3-model debate) is a complete safety-certification workflow built entirely from small models.
 
@@ -93,7 +93,7 @@ The Constitutional Debate tab runs a cached replay by default. To activate the l
 4. Restart the Space (Settings -> Factory reboot).
 5. The "Run live debate" button is now active — no code change required.
 
-Note: the cached example (Qwen2.5-1.5B/0.5B + SmolLM2-1.7B, MODERATE/MIXED config, ROUTE at 0.67 agreement) plays back correctly without Modal.
+Note: the cached example (Qwen3-8B + Phi-4-mini-instruct + SmolLM3-3B, MODERATE/MIXED config, CONDITIONAL at 0.67 agreement) plays back correctly without Modal.
 
 ---
 
@@ -103,10 +103,10 @@ HF Spaces sleep after inactivity. Before recording the demo video:
 
 1. Open `https://huggingface.co/spaces/Crusadersk/quantsafe-certifier` in a browser.
 2. Wait for the status indicator to go green.
-3. On the Live screen tab: trigger one dummy run to load model weights into memory.
-4. Then start recording — the first real run in the video will be fast.
+3. On the Live screen tab: trigger one dummy run with the smallest model (Qwen3-0.6B) to load weights into memory and warm the cache.
+4. Then start recording — the first real run in the video reuses the cached weights.
 
-Cold-start model load (transformers, CPU) can take 30–60 s for 1B models. Do not include the cold-start in the final cut.
+On CPU Basic the live screen runs each probe sequentially and shows per-probe progress; the first cold run (weight download + load) is the slow part, so warm it before recording and keep the default small model. Do not include the cold-start in the final cut.
 
 ---
 
@@ -123,6 +123,6 @@ Cold-start model load (transformers, CPU) can take 30–60 s for 1B models. Do n
 | phi-2 + GPTQ refusal_rate_delta | -0.90 (loses 90 percentage points) | rtsi_table.csv |
 | phi-2 + GPTQ score | 0.6199, HIGH | rtsi_table.csv |
 | qwen2.5-1.5b + GPTQ score (highest-risk cell) | 0.7864, HIGH | rtsi_table.csv |
-| Inter-judge Cohen's kappa | 0.74 (RELIABLE) | judge_agreement corpus |
-| Judges agree / split | 36/40 agree, 4 split | judge_agreement corpus |
-| Debate example consensus | ROUTE at 0.67 agreement (1 CONDITIONAL, 2 ROUTE) | cached debate replay |
+| Inter-judge Cohen's kappa | 0.7531 (RELIABLE) | judge_results.json (Qwen3Guard-Gen-8B + Granite-Guardian-3.3-8b) |
+| Judges agree / split | 35/40 agree, 5 split | judge_results.json |
+| Debate example consensus | CONDITIONAL at 0.67 agreement (2 CONDITIONAL, 1 ROUTE) | debate_examples.json (Qwen3-8B + Phi-4-mini-instruct + SmolLM3-3B) |
