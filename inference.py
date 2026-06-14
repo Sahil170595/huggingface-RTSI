@@ -184,30 +184,40 @@ def _infer_zerogpu(
     prompts: list[str],
     max_new_tokens: int,
 ) -> tuple[list[str], list[int]]:
-    """Generate all probes while one real ZeroGPU allocation is held."""
+    """Generate one tensor batch while a real ZeroGPU allocation is held."""
     import torch
 
     tokenizer, model = _load_gpu(model_id)
-    completions: list[str] = []
-    token_counts: list[int] = []
+    if not prompts:
+        return [], []
+
+    # Left padding keeps each completion aligned after the shared input width,
+    # allowing all probes to decode in one GPU batch instead of one at a time.
+    tokenizer.padding_side = "left"
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    rows = []
     for prompt in prompts:
-        encoded = {
-            key: value.to("cuda")
-            for key, value in _encode_prompt(tokenizer, model_id, prompt).items()
-        }
-        prompt_len = encoded["input_ids"].shape[-1]
-        with torch.inference_mode():
-            output_ids = model.generate(
-                **encoded,
-                max_new_tokens=max_new_tokens,
-                do_sample=False,
-                pad_token_id=tokenizer.eos_token_id,
-            )
-        generated_ids = output_ids[0, prompt_len:]
-        completions.append(
-            tokenizer.decode(generated_ids.detach().cpu(), skip_special_tokens=True)
+        encoded = _encode_prompt(tokenizer, model_id, prompt)
+        rows.append({key: value[0] for key, value in encoded.items()})
+    encoded_batch = tokenizer.pad(rows, padding=True, return_tensors="pt")
+    encoded_batch = {key: value.to("cuda") for key, value in encoded_batch.items()}
+    prompt_width = encoded_batch["input_ids"].shape[-1]
+
+    with torch.inference_mode():
+        output_ids = model.generate(
+            **encoded_batch,
+            max_new_tokens=max_new_tokens,
+            do_sample=False,
+            pad_token_id=tokenizer.pad_token_id,
         )
-        token_counts.append(int(generated_ids.shape[-1]))
+
+    generated = output_ids[:, prompt_width:].detach().cpu()
+    completions = tokenizer.batch_decode(generated, skip_special_tokens=True)
+    token_counts = [
+        int(row.ne(tokenizer.pad_token_id).sum().item())
+        for row in generated
+    ]
     return completions, token_counts
 
 
