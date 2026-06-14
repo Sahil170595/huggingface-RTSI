@@ -22,6 +22,7 @@ from __future__ import annotations
 import html
 import json
 import os
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -32,6 +33,24 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from features import live_rtsi, load_substrate_feature_rows
+
+# Gradio 5.50 warns about its Gradio 6 constructor migration even though its
+# launch() does not yet accept theme/css_paths/head. Keep logs clean while this
+# exact version remains pinned around the verified Gradio 6 tab-switch freeze.
+if gr.__version__ == "5.50.0":
+    warnings.filterwarnings(
+        "ignore",
+        message=(
+            r"The '(?:theme|css_paths|head)' parameter in the Blocks constructor "
+            r"will be removed in Gradio 6\.0\..*"
+        ),
+        category=DeprecationWarning,
+    )
+    warnings.filterwarnings(
+        "ignore",
+        message=r"Passing a tuple to 'row_count' will be removed in Gradio 6\.0\..*",
+        category=DeprecationWarning,
+    )
 
 try:
     import spaces
