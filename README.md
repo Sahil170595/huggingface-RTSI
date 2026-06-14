@@ -41,15 +41,29 @@ models:
 
 # QuantSafe Certifier
 
-QuantSafe Certifier is a small-model safety workflow for a practical deployment question: **did quantization preserve benchmark quality while silently damaging refusal behavior?**
+**QuantSafe issues a signed, portable, tamper-evident proof that a specific `(model, quant)` config was actually safety-evaluated.** Quantization can silently delete a model's refusals while every benchmark still looks fine — so the screen scores the refusal damage, routes the dangerous configs, and signs the decision with an Ed25519 certificate anyone can verify offline.
+
+**Who this is for.** I publish quantized small models that other people download and run. My profile ships 18 GPTQ/AWQ 4-bit quants — [`Crusadersk/phi-2-gptq-4bit`](https://huggingface.co/Crusadersk/phi-2-gptq-4bit), [`Crusadersk/qwen2.5-1.5b-gptq-4bit`](https://huggingface.co/Crusadersk/qwen2.5-1.5b-gptq-4bit), [`Crusadersk/mistral-7b-awq-4bit`](https://huggingface.co/Crusadersk/mistral-7b-awq-4bit), [`Crusadersk/llama3.2-3b-gptq-4bit`](https://huggingface.co/Crusadersk/llama3.2-3b-gptq-4bit), and more — and people genuinely pull them down ([`Crusadersk/tiny-gpt2`](https://huggingface.co/Crusadersk/tiny-gpt2) alone has 1,028 downloads). QuantSafe is the audit I run on my **own** catalog before I ship: it caught my `phi-2-gptq-4bit` quietly losing **90 percentage points of refusal**, and it flagged `qwen2.5-1.5b-gptq-4bit` as the single highest-risk config I publish. Now I screen every quant before it goes out the door.
 
 It screens a model/quantization cell, routes risky configurations, cross-checks independent safety judges, issues an Ed25519-signed certificate, and escalates genuinely contested cases to a constitutional multi-model debate.
 
 [Open the live Space](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier) · [Watch the 69-second demo](demo/quantsafe-demo.webm) · [GitHub source](https://github.com/Sahil170595/huggingface-RTSI) · [Field notes](FIELD_NOTES.md)
 
+**Built & audited in the open.** The full agent build/audit trace is published at [Crusadersk/quantsafe-agent-trace](https://huggingface.co/datasets/Crusadersk/quantsafe-agent-trace).
+
+## Verify a certificate
+
+Every certificate is signed with this Space's **pinned Ed25519 issuer key**:
+
+```text
+9a074a15598fef26f5fbd33e8d604cb6c2372989f164331c11018a83fcd98519
+```
+
+"Verify" means something here: the **Foreign re-sign test** button in the Safety Certificate tab forges a cert — it flips the verdict and re-signs it with a *fresh* key. The forgery is internally self-consistent, so a naive signature check passes. The pinned check against the issuer key above still rejects it. That is the whole point of pinning: a tampered, re-signed certificate fails verification.
+
 ## Why this matters
 
-`phi-2 + GPTQ` retained ordinary benchmark quality but lost **90 percentage points of refusal rate**. The screen scores that cell `0.6199` (`HIGH`) and routes it to a safe baseline. `qwen2.5-1.5b + GPTQ` is the highest-risk measured cell at `0.7864`.
+`phi-2 + GPTQ` ([`Crusadersk/phi-2-gptq-4bit`](https://huggingface.co/Crusadersk/phi-2-gptq-4bit)) retained ordinary benchmark quality but lost **90 percentage points of refusal rate**. The screen scores that cell `0.6199` (`HIGH`) and routes it to a safe baseline. `qwen2.5-1.5b + GPTQ` ([`Crusadersk/qwen2.5-1.5b-gptq-4bit`](https://huggingface.co/Crusadersk/qwen2.5-1.5b-gptq-4bit)) is the highest-risk measured cell at `0.7864`.
 
 The screen uses four baseline-relative behavioral deltas:
 
@@ -124,12 +138,7 @@ The endpoint requires `Authorization: Bearer $MODAL_TOKEN`; unknown models are r
 - All local and Modal `from_pretrained` calls use audited 40-character commit revisions, including the fine-tuned classifier.
 - The 45-cell substrate and cached judge/debate outputs are versioned under `substrate/`.
 - Probe prompts and raw live completions are never rendered in the UI.
-- Certificates are verified against this Space's pinned issuer public key:
-
-```text
-9a074a15598fef26f5fbd33e8d604cb6c2372989f164331c11018a83fcd98519
-```
-
+- Certificates are verified against this Space's pinned issuer public key (`9a074a15598fef26f5fbd33e8d604cb6c2372989f164331c11018a83fcd98519`); see [Verify a certificate](#verify-a-certificate) and the Foreign re-sign test.
 - The private signing key and Modal bearer token live only in deployment secrets.
 
 ## Build Small submission status

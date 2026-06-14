@@ -119,6 +119,22 @@ DEBATE_EXAMPLE = load_debate_examples()
 # Ed25519 signing key for safety certificates — created ONCE at startup.
 # Loads GRADIO_CERT_SIGNING_KEY_HEX if pinned, else an ephemeral keypair.
 SIGNING_KEY = cert_signer.SigningKey.from_env_or_generate()
+PINNED_ISSUER_PUBKEY_HEX = (
+    "9a074a15598fef26f5fbd33e8d604cb6c2372989f164331c11018a83fcd98519"
+)
+RUNNING_ON_HF_SPACE = bool(os.environ.get("SPACE_ID"))
+
+
+def _expected_issuer_pubkey() -> str:
+    """Return the published issuer on HF; allow ephemeral keys only in local dev."""
+    if RUNNING_ON_HF_SPACE:
+        return PINNED_ISSUER_PUBKEY_HEX
+    return SIGNING_KEY.pubkey_hex
+
+
+def _signing_key_ready() -> bool:
+    """Production certificates must be signed by the published issuer."""
+    return SIGNING_KEY.pubkey_hex == _expected_issuer_pubkey()
 
 # Fixed axes for the matrix (order matters for display).
 MODELS = ["qwen2.5-1.5b", "phi-2", "llama3.2-1b", "llama3.2-3b", "qwen2.5-7b", "mistral-7b"]
@@ -647,6 +663,19 @@ def issue_certificate(model: str, quant: str):
     cleared_verify_banner). Never echoes corpus text — only scores/bands.
     """
     cleared = ""  # reset any prior verify/tamper result on a fresh issue
+    if not _signing_key_ready():
+        return (
+            None,
+            "",
+            _msg(
+                "<b>Certificate issuance is disabled:</b> this Space's runtime "
+                "signing key does not match the published issuer key. An operator "
+                "must repair <code>GRADIO_CERT_SIGNING_KEY_HEX</code> before any "
+                "certificate can be minted.",
+                color="#7B2D26",
+            ),
+            cleared,
+        )
     if not model or not quant:
         return None, "", _msg("Pick a model and a quant, then click "
                               "<b>Issue signed certificate</b>."), cleared
@@ -707,7 +736,7 @@ def verify_displayed_cert(cert: dict | None):
         return _verify_banner(False, "No certificate issued yet — click "
                                      "<b>Issue signed certificate</b> first.")
     valid = cert_signer.verify_cert(
-        cert, expected_pubkey_hex=SIGNING_KEY.pubkey_hex
+        cert, expected_pubkey_hex=_expected_issuer_pubkey()
     )
     if valid:
         detail = ("Signature verifies against this Space's pinned issuer key — "
@@ -749,7 +778,7 @@ def foreign_resign_test(cert: dict | None):
 
     The forgery carries an internally consistent Ed25519 signature, so bare
     verify_cert(forged) is True; only the pinned check against this Space's
-    issuer key (expected_pubkey_hex=SIGNING_KEY.pubkey_hex) exposes it.
+    issuer key (expected_pubkey_hex=_expected_issuer_pubkey()) exposes it.
     Returns (forged_pretty_json, banner_html); the genuine cert in state is
     untouched.
     """
@@ -767,7 +796,7 @@ def foreign_resign_test(cert: dict | None):
 
     bare_ok = cert_signer.verify_cert(forged)          # expected: True
     pinned_ok = cert_signer.verify_cert(
-        forged, expected_pubkey_hex=SIGNING_KEY.pubkey_hex
+        forged, expected_pubkey_hex=_expected_issuer_pubkey()
     )                                                  # expected: False
     pretty = json.dumps(forged, indent=2, sort_keys=True)
     detail = (
@@ -1467,12 +1496,44 @@ def _on_load(request: gr.Request):
 # ---------------------------------------------------------------------------
 
 _PITCH = (
-    "A four-feature behavioral screen that catches quantized models whose "
-    "refusals quietly collapse while benchmark scores still look fine — then "
-    "tells you to deploy, probe, or route to a safe baseline."
+    "A <b>signed, portable, tamper-evident proof</b> that a specific "
+    "<b>(model,&nbsp;quant)</b> config was safety-evaluated — Ed25519-attested "
+    "against this Space's issuer key. I publish quantized small models that "
+    "people download; quantization can silently delete a model's refusals while "
+    "every benchmark still looks fine. So I built QuantSafe to audit my own "
+    "releases before I ship them — and it caught my "
+    "<code>phi-2-gptq-4bit</code> losing <b>90 points of refusal</b> (0.6199, HIGH) "
+    "and flagged <code>qwen2.5-1.5b-gptq-4bit</code> as the single highest-risk "
+    "config in my catalog (0.7864, HIGH)."
 )
 
 ABOUT_MD = f"""
+## What QuantSafe is
+
+QuantSafe issues a **signed, portable, tamper-evident proof** that a specific
+**(model, quant)** config was safety-evaluated. Each verdict is **Ed25519-attested**
+against this Space's issuer key: edit the payload and verification fails; re-sign it
+under a foreign key and it no longer matches this issuer. A cryptographic safety
+**attestation** you can hand to anyone who downloads the weights — that is the
+differentiator. The refusal-drift score, AUC, and calibration below are the
+evidence behind each attestation, not the headline.
+
+### Why I built it (and used it on my own releases)
+
+I'm a Hugging Face model publisher — I ship quantized small models that people
+download. Quantization can **silently delete a model's refusals** while every
+capability benchmark still looks fine, so a config can pass review and still be
+unsafe to ship. I built QuantSafe to **audit my own published quants before I
+release them**, and ran it across my catalog:
+
+- It caught my [`Crusadersk/phi-2-gptq-4bit`](https://huggingface.co/Crusadersk/phi-2-gptq-4bit)
+  **losing ~90 points of refusal** — refusal-drift **0.6199 (HIGH)**.
+- It flagged [`Crusadersk/qwen2.5-1.5b-gptq-4bit`](https://huggingface.co/Crusadersk/qwen2.5-1.5b-gptq-4bit)
+  as the **single highest-risk config** in my catalog — refusal-drift **0.7864 (HIGH)**.
+
+Now I screen every quant through QuantSafe and attach a signed certificate before
+I ship it. The rest of this page documents exactly how that screen decides.
+
 ## How QuantSafe decides
 
 Quantizing a model can silently degrade its **refusal behavior** — the model
@@ -1624,81 +1685,14 @@ _EDITORIAL_HEAD = """
 </style>
 """
 
-_EDITORIAL_CSS = """
-.gradio-container, .gradio-container .prose { background:#FAF9F6 !important; }
-
-/* Serif display for the header + every markdown heading. */
-.qs-header-title,
-.gradio-container h1, .gradio-container h2, .gradio-container h3,
-.gradio-container .prose h1, .gradio-container .prose h2, .gradio-container .prose h3 {
-  font-family:'Fraunces', Georgia, 'Times New Roman', serif !important;
-  font-weight:600 !important;
-  letter-spacing:-0.015em;
-  color:#1A1A1A;
-}
-
-/* Tab bar: quiet underline-active, no filled indigo pills. */
-.gradio-container .tab-nav, .gradio-container div[role="tablist"] {
-  border-bottom:1px solid #E5E0D8 !important;
-  gap:2px;
-}
-.gradio-container .tab-nav button, .gradio-container button[role="tab"] {
-  font-family:'Hanken Grotesk', sans-serif !important;
-  font-weight:600 !important;
-  font-size:14px !important;
-  letter-spacing:0.01em;
-  color:#6B6660 !important;
-  background:transparent !important;
-  border:none !important;
-  border-bottom:2px solid transparent !important;
-  border-radius:0 !important;
-  padding:10px 16px !important;
-}
-.gradio-container .tab-nav button:hover, .gradio-container button[role="tab"]:hover {
-  color:#1A1A1A !important;
-}
-.gradio-container .tab-nav button.selected,
-.gradio-container button[role="tab"][aria-selected="true"] {
-  color:#7B2D26 !important;
-  border-bottom:2px solid #7B2D26 !important;
-  background:transparent !important;
-}
-
-/* Primary button: squared, letter-spaced — editorial, not pill-y. */
-.gradio-container button.primary, .gradio-container .primary {
-  border-radius:3px !important;
-  font-family:'Hanken Grotesk', sans-serif !important;
-  font-weight:600 !important;
-  letter-spacing:0.03em !important;
-}
-
-/* Body copy in the clean grotesque; mono numerals stay tabular. */
-.gradio-container .prose p, .gradio-container .prose li {
-  font-family:'Hanken Grotesk', sans-serif !important;
-  color:#2A2722;
-}
-
-/* Keep the native tab overflow affordance visible on narrow screens. */
-.gradio-container .overflow-menu button {
-  color:#7B2D26 !important;
-  background:#FAF9F6 !important;
-}
-
-@media (max-width: 640px) {
-  .qs-header { padding:56px 0 2px !important; }
-  .qs-header-kicker { font-size:10px !important; letter-spacing:.18em !important; }
-  .qs-header-title { font-size:36px !important; margin-top:3px !important; }
-  .qs-header-subtitle { font-size:17px !important; }
-  .qs-header-rule { margin:10px auto 9px !important; }
-  .qs-header-pitch { font-size:13px !important; line-height:1.42 !important; }
-  .gradio-container .tab-nav button,
-  .gradio-container button[role="tab"] { padding:9px 11px !important; }
-}
-"""
+# Editorial CSS lives in a real sibling file (styles.css) so it ships as a
+# first-class Space asset and loads the gradio-native way via css_paths. Path is
+# resolved relative to this module so it works regardless of the launch cwd.
+_EDITORIAL_CSS_PATH = str(Path(__file__).resolve().parent / "styles.css")
 
 with gr.Blocks(
     theme=theme,
-    css=_EDITORIAL_CSS,
+    css_paths=[_EDITORIAL_CSS_PATH],
     head=_EDITORIAL_HEAD,
     analytics_enabled=False,
     title="QuantSafe — will this quant jailbreak your model?",
@@ -1957,6 +1951,27 @@ with gr.Blocks(
                 "consistent. Verdict mapping: **LOW → PASS**, **MODERATE → "
                 "REVIEW**, **HIGH → ROUTE** (route to a safe baseline)."
             )
+            if _signing_key_ready():
+                gr.HTML(
+                    '<div style="margin:6px 0 10px;padding:12px 16px;border-radius:8px;'
+                    'background:#ECF0EA;border-left:5px solid #4F6F52;color:#364B38;'
+                    'font-size:13px;line-height:1.55;">'
+                    "<b>Issuer identity pinned:</b> certificates are verified against "
+                    f"<code>{_expected_issuer_pubkey()}</code>."
+                    "</div>",
+                    padding=False,
+                )
+            else:
+                gr.HTML(
+                    '<div style="margin:6px 0 10px;padding:12px 16px;border-radius:8px;'
+                    'background:#F3E7E5;border-left:5px solid #7B2D26;color:#5C211C;'
+                    'font-size:13px;line-height:1.55;">'
+                    "<b>Issuer configuration error:</b> certificate issuance is "
+                    "disabled because the runtime signing key does not match the "
+                    "published issuer."
+                    "</div>",
+                    padding=False,
+                )
 
             # Escalation pointer: a REVIEW verdict (MODERATE band) is the
             # genuinely contested case — the borderline config the Constitutional

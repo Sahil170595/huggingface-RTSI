@@ -95,6 +95,20 @@ class TestIssueCertificate:
         assert cert is None
         assert "Pick a model" in banner
 
+    def test_hf_space_fails_closed_on_wrong_runtime_key(self, monkeypatch):
+        monkeypatch.setattr(app, "RUNNING_ON_HF_SPACE", True)
+        monkeypatch.setattr(app, "SIGNING_KEY", cert_signer.SigningKey.generate())
+        assert app.SIGNING_KEY.pubkey_hex != app.PINNED_ISSUER_PUBKEY_HEX
+
+        cert, pretty, banner, _cleared = app.issue_certificate(
+            "qwen2.5-1.5b",
+            "GPTQ",
+        )
+        assert cert is None
+        assert pretty == ""
+        assert "issuance is disabled" in banner
+        assert "does not match the published issuer key" in banner
+
 
 class TestVerifyDisplayedCert:
     def test_genuine_cert_verifies_valid(self):

@@ -1,0 +1,69 @@
+.gradio-container, .gradio-container .prose { background:#FAF9F6 !important; }
+
+/* Serif display for the header + every markdown heading. */
+.qs-header-title,
+.gradio-container h1, .gradio-container h2, .gradio-container h3,
+.gradio-container .prose h1, .gradio-container .prose h2, .gradio-container .prose h3 {
+  font-family:'Fraunces', Georgia, 'Times New Roman', serif !important;
+  font-weight:600 !important;
+  letter-spacing:-0.015em;
+  color:#1A1A1A;
+}
+
+/* Tab bar: quiet underline-active, no filled indigo pills. */
+.gradio-container .tab-nav, .gradio-container div[role="tablist"] {
+  border-bottom:1px solid #E5E0D8 !important;
+  gap:2px;
+}
+.gradio-container .tab-nav button, .gradio-container button[role="tab"] {
+  font-family:'Hanken Grotesk', sans-serif !important;
+  font-weight:600 !important;
+  font-size:14px !important;
+  letter-spacing:0.01em;
+  color:#6B6660 !important;
+  background:transparent !important;
+  border:none !important;
+  border-bottom:2px solid transparent !important;
+  border-radius:0 !important;
+  padding:10px 16px !important;
+}
+.gradio-container .tab-nav button:hover, .gradio-container button[role="tab"]:hover {
+  color:#1A1A1A !important;
+}
+.gradio-container .tab-nav button.selected,
+.gradio-container button[role="tab"][aria-selected="true"] {
+  color:#7B2D26 !important;
+  border-bottom:2px solid #7B2D26 !important;
+  background:transparent !important;
+}
+
+/* Primary button: squared, letter-spaced — editorial, not pill-y. */
+.gradio-container button.primary, .gradio-container .primary {
+  border-radius:3px !important;
+  font-family:'Hanken Grotesk', sans-serif !important;
+  font-weight:600 !important;
+  letter-spacing:0.03em !important;
+}
+
+/* Body copy in the clean grotesque; mono numerals stay tabular. */
+.gradio-container .prose p, .gradio-container .prose li {
+  font-family:'Hanken Grotesk', sans-serif !important;
+  color:#2A2722;
+}
+
+/* Keep the native tab overflow affordance visible on narrow screens. */
+.gradio-container .overflow-menu button {
+  color:#7B2D26 !important;
+  background:#FAF9F6 !important;
+}
+
+@media (max-width: 640px) {
+  .qs-header { padding:56px 0 2px !important; }
+  .qs-header-kicker { font-size:10px !important; letter-spacing:.18em !important; }
+  .qs-header-title { font-size:36px !important; margin-top:3px !important; }
+  .qs-header-subtitle { font-size:17px !important; }
+  .qs-header-rule { margin:10px auto 9px !important; }
+  .qs-header-pitch { font-size:13px !important; line-height:1.42 !important; }
+  .gradio-container .tab-nav button,
+  .gradio-container button[role="tab"] { padding:9px 11px !important; }
+}
