@@ -43,14 +43,12 @@ An end-to-end production run through the public Space completed two rounds acros
 
 Reproducibility also required more than pinning Python packages. Every model loader now pins an immutable Hugging Face repository commit, preventing an upstream `main` branch change from silently altering live behavior.
 
-The 32B cap is per individual model: the field guide's own example permits a
-14B + 7B + 12B combination (33B total) precisely because each model — not the
-catalog sum — must stay under the cap. Every model here is already far below 32B,
-so nothing had to be cut. Running the tiny Qwen3Guard-Gen-0.6B guard is therefore
-a deliberate small-model bet rather than a forced downgrade — paired with Granite
-Guardian it still reaches kappa 0.7484 (RELIABLE) and surfaces five split cases
-instead of hiding them. As belt-and-suspenders, the full runtime catalog still
-totals ~31B, so the app clears even a hypothetical total-sum reading.
+The official challenge page states that total parameters must stay at or below
+32B. Running the tiny Qwen3Guard-Gen-0.6B guard is a deliberate small-model bet:
+paired with Granite Guardian it still reaches kappa 0.7484 (RELIABLE) and
+surfaces five split cases instead of hiding them. Counting every runtime
+repository, including the duplicate Llama 3.2 1B mirror and the fine-tuned
+semantic classifier, the complete catalog totals 30.972674562B.
 
 The semantic model is intentionally a cross-check rather than a replacement
 for the lexical feature extractor. Replacing the feature definition after

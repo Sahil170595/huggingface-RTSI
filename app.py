@@ -119,6 +119,22 @@ DEBATE_EXAMPLE = load_debate_examples()
 # Ed25519 signing key for safety certificates — created ONCE at startup.
 # Loads GRADIO_CERT_SIGNING_KEY_HEX if pinned, else an ephemeral keypair.
 SIGNING_KEY = cert_signer.SigningKey.from_env_or_generate()
+PINNED_ISSUER_PUBKEY_HEX = (
+    "9a074a15598fef26f5fbd33e8d604cb6c2372989f164331c11018a83fcd98519"
+)
+RUNNING_ON_HF_SPACE = bool(os.environ.get("SPACE_ID"))
+
+
+def _expected_issuer_pubkey() -> str:
+    """Return the published issuer on HF; allow ephemeral keys only in local dev."""
+    if RUNNING_ON_HF_SPACE:
+        return PINNED_ISSUER_PUBKEY_HEX
+    return SIGNING_KEY.pubkey_hex
+
+
+def _signing_key_ready() -> bool:
+    """Production certificates must be signed by the published issuer."""
+    return SIGNING_KEY.pubkey_hex == _expected_issuer_pubkey()
 
 # Fixed axes for the matrix (order matters for display).
 MODELS = ["qwen2.5-1.5b", "phi-2", "llama3.2-1b", "llama3.2-3b", "qwen2.5-7b", "mistral-7b"]
@@ -647,6 +663,19 @@ def issue_certificate(model: str, quant: str):
     cleared_verify_banner). Never echoes corpus text — only scores/bands.
     """
     cleared = ""  # reset any prior verify/tamper result on a fresh issue
+    if not _signing_key_ready():
+        return (
+            None,
+            "",
+            _msg(
+                "<b>Certificate issuance is disabled:</b> this Space's runtime "
+                "signing key does not match the published issuer key. An operator "
+                "must repair <code>GRADIO_CERT_SIGNING_KEY_HEX</code> before any "
+                "certificate can be minted.",
+                color="#7B2D26",
+            ),
+            cleared,
+        )
     if not model or not quant:
         return None, "", _msg("Pick a model and a quant, then click "
                               "<b>Issue signed certificate</b>."), cleared
@@ -707,7 +736,7 @@ def verify_displayed_cert(cert: dict | None):
         return _verify_banner(False, "No certificate issued yet — click "
                                      "<b>Issue signed certificate</b> first.")
     valid = cert_signer.verify_cert(
-        cert, expected_pubkey_hex=SIGNING_KEY.pubkey_hex
+        cert, expected_pubkey_hex=_expected_issuer_pubkey()
     )
     if valid:
         detail = ("Signature verifies against this Space's pinned issuer key — "
@@ -749,7 +778,7 @@ def foreign_resign_test(cert: dict | None):
 
     The forgery carries an internally consistent Ed25519 signature, so bare
     verify_cert(forged) is True; only the pinned check against this Space's
-    issuer key (expected_pubkey_hex=SIGNING_KEY.pubkey_hex) exposes it.
+    issuer key (expected_pubkey_hex=_expected_issuer_pubkey()) exposes it.
     Returns (forged_pretty_json, banner_html); the genuine cert in state is
     untouched.
     """
@@ -767,7 +796,7 @@ def foreign_resign_test(cert: dict | None):
 
     bare_ok = cert_signer.verify_cert(forged)          # expected: True
     pinned_ok = cert_signer.verify_cert(
-        forged, expected_pubkey_hex=SIGNING_KEY.pubkey_hex
+        forged, expected_pubkey_hex=_expected_issuer_pubkey()
     )                                                  # expected: False
     pretty = json.dumps(forged, indent=2, sort_keys=True)
     detail = (
@@ -1922,6 +1951,27 @@ with gr.Blocks(
                 "consistent. Verdict mapping: **LOW → PASS**, **MODERATE → "
                 "REVIEW**, **HIGH → ROUTE** (route to a safe baseline)."
             )
+            if _signing_key_ready():
+                gr.HTML(
+                    '<div style="margin:6px 0 10px;padding:12px 16px;border-radius:8px;'
+                    'background:#ECF0EA;border-left:5px solid #4F6F52;color:#364B38;'
+                    'font-size:13px;line-height:1.55;">'
+                    "<b>Issuer identity pinned:</b> certificates are verified against "
+                    f"<code>{_expected_issuer_pubkey()}</code>."
+                    "</div>",
+                    padding=False,
+                )
+            else:
+                gr.HTML(
+                    '<div style="margin:6px 0 10px;padding:12px 16px;border-radius:8px;'
+                    'background:#F3E7E5;border-left:5px solid #7B2D26;color:#5C211C;'
+                    'font-size:13px;line-height:1.55;">'
+                    "<b>Issuer configuration error:</b> certificate issuance is "
+                    "disabled because the runtime signing key does not match the "
+                    "published issuer."
+                    "</div>",
+                    padding=False,
+                )
 
             # Escalation pointer: a REVIEW verdict (MODERATE band) is the
             # genuinely contested case — the borderline config the Constitutional
