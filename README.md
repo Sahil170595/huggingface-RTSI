@@ -17,6 +17,7 @@ tags:
   - achievement:welltuned
   - achievement:sharing
   - achievement:fieldnotes
+  - achievement:llama
   - safety
   - safety-evaluation
   - quantization
@@ -36,6 +37,8 @@ tags:
   - model-supply-chain
   - release-gating
   - arxiv:2606.10154
+  - llama-cpp
+  - gguf
   - modal
   - codex
 models:
@@ -120,6 +123,20 @@ The absolute deltas are normalized across the reference matrix and combined usin
 - Cached three-model debate reaches **CONDITIONAL** at **0.67 agreement**, a genuine 2/3 majority
 
 These are screening results on a fixed reference matrix, not a claim that the screen replaces a full safety evaluation. A HIGH result explicitly routes to the expensive safety path.
+
+## Llama Champion evidence
+
+QuantSafe's measured substrate includes **34 GGUF cells** across the
+`Q2_K`, `Q3_K_S`, `Q4_K_M`, `Q5_K_M`, `Q6_K`, and `Q8_0` ladder. Those model
+runs were executed through **llama.cpp via Ollama**, then normalized into the
+same matched quality/safety matrix as the AWQ and GPTQ cells. The runtime and
+compute split are documented in the paper's
+[Compute Resources section](https://arxiv.org/html/2606.10154v1#A7).
+
+The Space serves the frozen aggregate outputs rather than downloading the
+historical GGUF weights again. This is evidence of the project's actual
+llama.cpp evaluation path, not a claim that the live ZeroGPU probe uses
+llama.cpp.
 
 ## Six-tab workflow
 

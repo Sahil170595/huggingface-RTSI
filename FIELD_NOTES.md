@@ -37,6 +37,8 @@ The workflow then adds four checks around that score:
 - Per-model Modal containers made remote debate turns naturally parallelizable.
 - A single ZeroGPU allocation now batches both live checkpoints across the full
   exploratory probe set instead of queueing once per prompt.
+- The 34-cell GGUF slice was run through llama.cpp via Ollama, covering the
+  Q2_K through Q8_0 ladder before normalization into the matched matrix.
 
 ## Engineering lessons
 

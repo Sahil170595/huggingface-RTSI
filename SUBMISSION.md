@@ -23,6 +23,17 @@
 
 ## 3. Hard-Constraint Checks
 
+### Merit badges
+
+- `achievement:offbrand`: custom editorial Gradio UI.
+- `achievement:welltuned`: published QuantSafe Refusal ModernBERT fine-tune.
+- `achievement:llama`: 34 GGUF cells evaluated through llama.cpp via Ollama.
+- `achievement:sharing`: public agent trace dataset.
+- `achievement:fieldnotes`: published engineering report.
+
+The app does not claim `achievement:offgrid`; ZeroGPU, Modal, and optional HF
+Inference Providers are explicit cloud dependencies.
+
 ### Total runtime model catalog <=32B
 
 | Role | Models | Size |
