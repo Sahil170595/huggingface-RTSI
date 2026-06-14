@@ -8,7 +8,7 @@ sdk_version: 5.50.0
 app_file: app.py
 pinned: false
 license: apache-2.0
-short_description: Signed safety attestations for quantized small-model releases.
+short_description: Signed safety proofs for quantized small-model releases.
 tags:
   - track:backyard
   - sponsor:openai
