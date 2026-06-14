@@ -118,10 +118,13 @@ HF Spaces sleep after inactivity. Before recording the demo video:
 
 1. Open `https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier` in a browser.
 2. Wait for the status indicator to go green.
-3. On the Exploratory live probe tab, use the remote backend for a short smoke run; do not present this cross-model result as a calibrated release decision.
-4. Then start recording — the first real run in the video reuses the cached weights.
+3. On the Exploratory live probe tab, run the default ZeroGPU pair once; do not present this cross-model result as a calibrated release decision.
+4. Then start recording — the first recorded run reuses the cached weights.
 
-The exploratory tab runs each probe sequentially and shows per-probe progress. The first cold run is the slow part, so warm the selected backend before recording and do not include the cold-start in the final cut.
+The exploratory tab decodes all ten probes as one tensor batch per checkpoint
+inside a single 60-second ZeroGPU allocation. A measured warm production run
+completed in about 30 seconds; warm the models before recording and cut any
+cold-download wait from the final video.
 
 ---
 
