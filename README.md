@@ -8,7 +8,7 @@ sdk_version: 5.50.0
 app_file: app.py
 pinned: false
 license: apache-2.0
-short_description: Screen quantized-model refusal drift and certify decisions.
+short_description: Signed safety attestations for quantized small-model releases.
 tags:
   - track:backyard
   - sponsor:openai
@@ -25,6 +25,14 @@ tags:
   - text-classification
   - modernbert
   - gradio
+  - backyard-ai
+  - model-evaluation
+  - agents
+  - multi-agent
+  - ed25519
+  - cryptography
+  - modal
+  - codex
 models:
   - Qwen/Qwen3-0.6B
   - Qwen/Qwen3-1.7B
@@ -43,7 +51,7 @@ models:
 
 **QuantSafe issues a signed, portable, tamper-evident proof that a specific `(model, quant)` config was actually safety-evaluated.** Quantization can silently delete a model's refusals while every benchmark still looks fine — so the screen scores the refusal damage, routes the dangerous configs, and signs the decision with an Ed25519 certificate anyone can verify offline.
 
-**Who this is for.** I publish quantized small models that other people download and run. My profile ships 18 GPTQ/AWQ 4-bit quants — [`Crusadersk/phi-2-gptq-4bit`](https://huggingface.co/Crusadersk/phi-2-gptq-4bit), [`Crusadersk/qwen2.5-1.5b-gptq-4bit`](https://huggingface.co/Crusadersk/qwen2.5-1.5b-gptq-4bit), [`Crusadersk/mistral-7b-awq-4bit`](https://huggingface.co/Crusadersk/mistral-7b-awq-4bit), [`Crusadersk/llama3.2-3b-gptq-4bit`](https://huggingface.co/Crusadersk/llama3.2-3b-gptq-4bit), and more — and people genuinely pull them down ([`Crusadersk/tiny-gpt2`](https://huggingface.co/Crusadersk/tiny-gpt2) alone has 1,028 downloads). QuantSafe is the audit I run on my **own** catalog before I ship: it caught my `phi-2-gptq-4bit` quietly losing **90 percentage points of refusal**, and it flagged `qwen2.5-1.5b-gptq-4bit` as the single highest-risk config I publish. Now I screen every quant before it goes out the door.
+**Who actually uses it.** The first user is me: I publish quantized small models that other people download and run. My profile ships 18 GPTQ/AWQ 4-bit quants — [`Crusadersk/phi-2-gptq-4bit`](https://huggingface.co/Crusadersk/phi-2-gptq-4bit), [`Crusadersk/qwen2.5-1.5b-gptq-4bit`](https://huggingface.co/Crusadersk/qwen2.5-1.5b-gptq-4bit), [`Crusadersk/mistral-7b-awq-4bit`](https://huggingface.co/Crusadersk/mistral-7b-awq-4bit), [`Crusadersk/llama3.2-3b-gptq-4bit`](https://huggingface.co/Crusadersk/llama3.2-3b-gptq-4bit), and more — and people genuinely pull them down ([`Crusadersk/tiny-gpt2`](https://huggingface.co/Crusadersk/tiny-gpt2) alone has 1,028 downloads). QuantSafe is the audit I run on my **own** catalog before I ship: it caught my `phi-2-gptq-4bit` quietly losing **90 percentage points of refusal**, and it flagged `qwen2.5-1.5b-gptq-4bit` as the single highest-risk config I publish. Now I screen every quant before it goes out the door.
 
 It screens a model/quantization cell, routes risky configurations, cross-checks independent safety judges, issues an Ed25519-signed certificate, and escalates genuinely contested cases to a constitutional multi-model debate.
 
@@ -132,6 +140,31 @@ signal rather than silently changing the frozen RTSI calibration.
 Modal is part of the production runtime, not a placeholder. `modal_app.py` serves authenticated `/generate` and `/judge` endpoints on GPU-backed, per-model container pools. Within each debate round, the Space fans independent model calls out concurrently and restores deterministic model order before consensus.
 
 The endpoint requires `Authorization: Bearer $MODAL_TOKEN`; unknown models are rejected by an allowlist. Model downloads are pinned to immutable Hugging Face commit SHAs in `model_revisions.py`.
+
+In one measured production run, the parallel Modal debate completed two rounds
+across three model families in **34.8 seconds**, versus **195.3 seconds** for the
+earlier sequential cached run. That observed 5.6× improvement is not a general
+latency guarantee; it demonstrates why the per-model Modal container topology
+is load-bearing for the interactive workflow.
+
+## Agentic escalation
+
+The constitutional debate is a bounded multi-agent safety escalation, not a
+single majority-vote prompt. Three distinct model families independently
+**propose**, read one another's positions, **critique and refine**, then emit
+final stances for a strict 2/3 consensus. It runs only for genuinely contested
+MODERATE/MIXED decisions; clear HIGH configurations route without wasting an
+agent round.
+
+## OpenAI Codex provenance
+
+OpenAI Codex was used as an engineering agent for the adversarial audit,
+fine-tuned-model integration, unit and browser verification, Hugging Face
+release repair, and production certificate-identity incident response. The
+reviewable build trace is public at
+[Crusadersk/quantsafe-agent-trace](https://huggingface.co/datasets/Crusadersk/quantsafe-agent-trace),
+including the final live restart test that proved the published Ed25519 issuer
+remains stable.
 
 ## Reproducibility and privacy
 
