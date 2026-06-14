@@ -54,9 +54,13 @@ models:
 
 # QuantSafe Certifier
 
-**QuantSafe creates an artifact-bound, Ed25519-signed screening record for a published quantized model.** For the 11 published AWQ/GPTQ checkpoints in the measured matrix, record v2 signs the exact Hugging Face revision plus SHA-256 hashes of the frozen matrix, validation report, judge results, and scorer.
+**QuantSafe creates a release-target-bound, Ed25519-signed screening record for a published quantized model.** For the 11 published AWQ/GPTQ checkpoints in the measured matrix, record v2 signs a publisher-linked Hub revision plus a content-addressed manifest of the frozen matrix, validation report, judge results, scorer, artifact mapping, and signing policy.
 
 The signature proves issuer identity and payload integrity. It does **not** prove that a model is safe. RTSI is a study-internal triage signal that decides whether a configuration clears this screen, needs review, or must be routed to direct safety evaluation.
+
+The historical study did not retain cryptographic weight digests. The signed
+revision is therefore an explicit release target linked by the publisher, not
+proof that those exact weights generated the historical measurement.
 
 **Research basis:** Sahil Kadadekar, [*Quality Is Not a Safety Proxy Under Quantization*](https://arxiv.org/abs/2606.10154), arXiv:2606.10154 (2026 preprint).
 
@@ -79,7 +83,7 @@ Every record is signed with this Space's **pinned Ed25519 issuer key**:
 9a074a15598fef26f5fbd33e8d604cb6c2372989f164331c11018a83fcd98519
 ```
 
-Record v2 includes an immutable Hub revision for published AWQ/GPTQ artifacts and signed evidence hashes. Older GGUF cells are explicitly marked `legacy-config-only` because the original matrix did not retain immutable weight digests.
+Record v2 includes a publisher-linked Hub revision for published AWQ/GPTQ artifacts, signed evidence hashes, and cross-field semantic checks. Older GGUF cells are explicitly marked `legacy-config-only` because the original matrix did not retain immutable weight digests.
 
 The **Foreign re-sign test** modifies a record and signs it with a fresh key. Its signature is internally valid, but issuer-pinned verification still rejects it. The standalone verifier is documented in [`CERTIFICATE.md`](CERTIFICATE.md):
 
@@ -189,7 +193,7 @@ remains stable.
 - All local and Modal `from_pretrained` calls use audited 40-character commit revisions, including the fine-tuned classifier.
 - The 51-row study comprises 6 baselines and 45 non-baseline cells; the signed screening substrate and cached judge/debate outputs are versioned under `substrate/`.
 - Probe prompts and raw live completions are never rendered in the UI.
-- Version 2 records bind published AWQ/GPTQ cells to immutable Hub revisions and sign the hashes of the matrix, validation report, judge results, and scorer.
+- Version 2 records bind the publisher's release target and sign a content-addressed evidence manifest. The verifier enforces v2 schema, artifact mapping, and band/action consistency in addition to Ed25519 issuer verification.
 - Records are verified against this Space's pinned issuer public key (`9a074a15598fef26f5fbd33e8d604cb6c2372989f164331c11018a83fcd98519`); see [Verify a signed record](#verify-a-signed-record) and the Foreign re-sign test.
 - The private signing key and Modal bearer token live only in deployment secrets.
 

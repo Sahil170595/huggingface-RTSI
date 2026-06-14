@@ -15,7 +15,7 @@
 | **Score a config** | Static refusal-drift lookup across 45 measured (model, quant) cells — 23 LOW / 13 MODERATE / 9 HIGH | AUC 0.8445 |
 | **Exploratory live probe** | Compares two live small-model checkpoints and reports aggregate drift; it is explicitly outside the matched baseline/quant calibration | 97.73% external XSTest classifier accuracy |
 | **Judge Agreement** | Two independent safety classifiers label a 40-prompt corpus; agreement and curated-label accuracy are reported separately | kappa = 0.7484 (RELIABLE); 35/40 agree; unanimous decisions are 94.3% accurate |
-| **Signed Screening Record** | Ed25519-signed record over artifact revision, evidence hashes, screen result, cohort-level kappa, and action (`SCREEN_PASS` / `REVIEW` / `ROUTE`), verified against the pinned issuer key | artifact-bound and tamper-evident |
+| **Signed Screening Record** | Ed25519-signed record over a publisher-linked release revision, content-addressed evidence, screen result, cohort-level kappa, and action (`SCREEN_PASS` / `REVIEW` / `ROUTE`), verified against the pinned issuer key | release-target-bound and tamper-evident |
 | **Constitutional Debate** | Small models argue "deploy or route" on MODERATE / MIXED configs under a constitution and reach consensus | cached example: 3 models -> CONDITIONAL at 0.67 agreement (genuine 2/3 majority) |
 | **About** | Defines the study-internal scope, validation, paper relationship, and limitations | arXiv:2606.10154 |
 

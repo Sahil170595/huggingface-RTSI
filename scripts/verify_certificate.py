@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify a QuantSafe certificate signature and optional local evidence."""
+"""Verify a QuantSafe record signature, v2 semantics, and optional evidence."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ DEFAULT_ISSUER = "9a074a15598fef26f5fbd33e8d604cb6c2372989f164331c11018a83fcd985
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Verify a QuantSafe Ed25519 certificate."
+        description="Verify a QuantSafe Ed25519 signed screening record."
     )
     parser.add_argument("certificate", type=Path, help="Path to certificate JSON")
     parser.add_argument(
@@ -48,8 +48,14 @@ def main() -> int:
         print("INVALID: signature or issuer check failed", file=sys.stderr)
         return 1
 
+    semantic_errors = attestation.validate_record_semantics(certificate)
+    if semantic_errors:
+        for error in semantic_errors:
+            print(f"INVALID: {error}", file=sys.stderr)
+        return 1
+
     artifact = certificate.get("artifact") or {}
-    print(f"VALID signature: issuer={args.issuer.lower()}")
+    print(f"VALID signature and v2 semantics: issuer={args.issuer.lower()}")
     print(f"artifact scope: {artifact.get('scope', 'unspecified')}")
     if artifact.get("repo_id") and artifact.get("revision"):
         print(f"artifact: {artifact['repo_id']}@{artifact['revision']}")

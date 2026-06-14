@@ -3,9 +3,18 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import math
+import re
 from pathlib import Path
 from typing import Any
 
+
+ACTION_FROM_BAND = {
+    "LOW": "SCREEN_PASS",
+    "MODERATE": "REVIEW",
+    "HIGH": "ROUTE",
+}
 
 PUBLISHED_QUANT_ARTIFACTS: dict[tuple[str, str], tuple[str, str]] = {
     ("llama3.2-1b", "AWQ"): (
@@ -59,6 +68,8 @@ EVIDENCE_PATHS = (
     "substrate/judge_results.json",
     "substrate/validation_report.json",
     "rtsi_core.py",
+    "attestation.py",
+    "cert_signer.py",
 )
 
 
@@ -87,30 +98,110 @@ def artifact_identity(model: str, quant: str) -> dict[str, Any]:
 
     repo_id, revision = published
     return {
-        "scope": "huggingface-model-revision",
+        "scope": "publisher-linked-huggingface-revision",
         "repo_id": repo_id,
         "revision": revision,
         "url": f"https://huggingface.co/{repo_id}/tree/{revision}",
+        "provenance_note": (
+            "The publisher links this release target to the measured study cell. "
+            "The historical study did not retain a cryptographic weight digest, "
+            "so this is not proof that the revision generated the measurement."
+        ),
     }
 
 
 def evidence_identity(root: Path) -> dict[str, Any]:
     """Hash every frozen input that determines the signed decision."""
     files = {
-        relative: {"sha256": sha256_file(root / relative)}
+        relative: {
+            "sha256": sha256_file(root / relative),
+            "size_bytes": (root / relative).stat().st_size,
+        }
         for relative in EVIDENCE_PATHS
     }
+    manifest_sha256 = hashlib.sha256(
+        json.dumps(files, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
     return {
         "files": files,
+        "manifest_sha256": manifest_sha256,
         "method": {
             "name": "Refusal Template Stability Index",
             "paper": "https://arxiv.org/abs/2606.10154",
         },
-        "source": (
+        "source_repository": (
             "https://huggingface.co/spaces/"
-            "build-small-hackathon/quantsafe-certifier/tree/main"
+            "build-small-hackathon/quantsafe-certifier"
         ),
     }
+
+
+def validate_record_semantics(record: dict[str, Any]) -> list[str]:
+    """Validate the v2 schema and cross-field release-gate invariants."""
+    errors: list[str] = []
+    if record.get("version") != "2":
+        errors.append("record version must be 2")
+
+    config = record.get("config")
+    if not isinstance(config, dict):
+        return errors + ["record config must be an object"]
+    model = config.get("model")
+    quant = config.get("quant")
+    if not isinstance(model, str) or not isinstance(quant, str):
+        errors.append("config model and quant must be strings")
+    elif record.get("artifact") != artifact_identity(model, quant):
+        errors.append("artifact reference does not match the published mapping")
+
+    screen_results = record.get("screen_results")
+    refusal = (
+        screen_results.get("refusal_stability")
+        if isinstance(screen_results, dict)
+        else None
+    )
+    if not isinstance(refusal, dict):
+        errors.append("screen_results.refusal_stability must be an object")
+    else:
+        band = refusal.get("band")
+        score = refusal.get("score")
+        if band not in ACTION_FROM_BAND:
+            errors.append("refusal band must be LOW, MODERATE, or HIGH")
+        elif record.get("verdict") != ACTION_FROM_BAND[band]:
+            errors.append("release-gate action is inconsistent with refusal band")
+        if (
+            not isinstance(score, (int, float))
+            or isinstance(score, bool)
+            or not math.isfinite(float(score))
+            or not 0.0 <= float(score) <= 1.0
+        ):
+            errors.append("refusal score must be finite and between 0 and 1")
+
+    evidence = record.get("evidence")
+    files = evidence.get("files") if isinstance(evidence, dict) else None
+    if not isinstance(files, dict):
+        errors.append("evidence.files must be an object")
+    else:
+        if set(files) != set(EVIDENCE_PATHS):
+            errors.append("evidence file set does not match the v2 policy")
+        for relative, file_record in files.items():
+            if not isinstance(file_record, dict):
+                errors.append(f"evidence entry is malformed: {relative}")
+                continue
+            digest = file_record.get("sha256")
+            size = file_record.get("size_bytes")
+            if (
+                not isinstance(digest, str)
+                or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            ):
+                errors.append(f"invalid evidence digest: {relative}")
+            if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+                errors.append(f"invalid evidence size: {relative}")
+        expected_manifest = hashlib.sha256(
+            json.dumps(files, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        if evidence.get("manifest_sha256") != expected_manifest:
+            errors.append("evidence manifest digest is inconsistent")
+
+    return errors
 
 
 def verify_evidence_files(evidence: dict[str, Any], root: Path) -> list[str]:
@@ -134,14 +225,22 @@ def verify_evidence_files(evidence: dict[str, Any], root: Path) -> list[str]:
             mismatches.append(
                 f"evidence digest mismatch for {relative}: {actual} != {expected}"
             )
+        expected_size = record.get("size_bytes")
+        if path.stat().st_size != expected_size:
+            mismatches.append(
+                f"evidence size mismatch for {relative}: "
+                f"{path.stat().st_size} != {expected_size}"
+            )
     return mismatches
 
 
 __all__ = [
+    "ACTION_FROM_BAND",
     "EVIDENCE_PATHS",
     "PUBLISHED_QUANT_ARTIFACTS",
     "artifact_identity",
     "evidence_identity",
     "sha256_file",
+    "validate_record_semantics",
     "verify_evidence_files",
 ]

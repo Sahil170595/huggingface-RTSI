@@ -3,9 +3,11 @@
 QuantSafe records are Ed25519-signed release-gate attestations.
 
 For the 11 published AWQ/GPTQ checkpoints in the measured matrix, the signed
-payload includes the exact Hugging Face repository and immutable 40-character
-revision. For older GGUF cells, the record says `legacy-config-only`
-because the original matrix did not retain immutable weight digests.
+payload includes a publisher-linked Hugging Face repository and immutable
+40-character revision. The historical study did not retain weight digests, so
+this identifies the publisher's release target; it does not prove that those
+exact weights generated the historical measurement. For older GGUF cells, the
+record says `legacy-config-only`.
 
 Every record also signs SHA-256 hashes for:
 
@@ -13,11 +15,13 @@ Every record also signs SHA-256 hashes for:
 - `substrate/judge_results.json`
 - `substrate/validation_report.json`
 - `rtsi_core.py`
+- `attestation.py`
+- `cert_signer.py`
 
-A valid signature proves who issued the record and that its payload was
-not changed. The artifact field identifies the exact published model revision
-when the historical evidence supports that claim. The evidence hashes identify
-the exact frozen inputs used by the release gate.
+A valid signature proves who issued the record and that its payload was not
+changed. The evidence manifest is content-addressed, and the verifier also
+enforces the v2 schema, publisher-linked artifact mapping, finite score range,
+and consistency between the refusal band and release-gate action.
 
 ## Offline verification
 

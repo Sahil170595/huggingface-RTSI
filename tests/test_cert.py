@@ -31,7 +31,7 @@ _SCREEN_RESULTS = {
     "judge_agreement": {"kappa": 0.81, "band": "RELIABLE"},
 }
 _ARTIFACT = {
-    "scope": "huggingface-model-revision",
+    "scope": "publisher-linked-huggingface-revision",
     "repo_id": "example/model",
     "revision": "a" * 40,
 }

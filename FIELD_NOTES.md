@@ -44,12 +44,12 @@ An end-to-end production run through the public Space completed two rounds acros
 
 Reproducibility also required more than pinning Python packages. Every model loader now pins an immutable Hugging Face repository commit, preventing an upstream `main` branch change from silently altering live behavior.
 
-The signed record follows the same rule. For the 11 published AWQ/GPTQ
-checkpoints, it binds the exact Hub revision plus SHA-256 hashes of the matrix,
-validation report, judge results, and scorer. Historical GGUF rows are labeled
-`legacy-config-only` because the original study did not retain immutable weight
-digests. A valid signature proves issuer identity and payload integrity; it
-does not prove broad model safety.
+For the 11 published AWQ/GPTQ checkpoints, the signed record binds the
+publisher's release-target revision plus a content-addressed evidence manifest.
+The historical study did not retain weight digests, so this does not prove that
+the linked revision generated the measurement. Historical GGUF rows are labeled
+`legacy-config-only`. A valid record proves issuer identity, payload integrity,
+and v2 policy consistency; it does not prove broad model safety.
 
 The official challenge page states that total parameters must stay at or below
 32B. Running the tiny Qwen3Guard-Gen-0.6B guard is a deliberate small-model bet:

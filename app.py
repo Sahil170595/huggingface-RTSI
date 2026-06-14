@@ -8,7 +8,7 @@ Six tabs:
   1. Score a config         — static lookup over the 45-cell substrate (zero inference).
   2. Exploratory live probe — compare two live HF models over internal probes.
   3. Judge Agreement        — precomputed inter-judge agreement (κ) over the corpus.
-  4. Signed Screening Record — artifact-bound Ed25519 record, verified against the
+  4. Signed Screening Record — release-target-bound Ed25519 record, verified against the
                               Space's pinned issuer key.
   5. Constitutional Debate  — cached replay + Modal-gated live multi-model debate.
   6. About                  — method, weights, thresholds, calibration.
@@ -174,11 +174,7 @@ ROUTING = {
 
 # Signed release-gate action. SCREEN_PASS means the RTSI screen did not trigger
 # escalation; it does not certify that the artifact is safe.
-VERDICT_FROM_BAND = {
-    "LOW": "SCREEN_PASS",
-    "MODERATE": "REVIEW",
-    "HIGH": "ROUTE",
-}
+VERDICT_FROM_BAND = attestation.ACTION_FROM_BAND
 VERDICT_COLOR = {
     "SCREEN_PASS": "#4F6F52",
     "REVIEW": "#9A7B3A",
@@ -605,7 +601,7 @@ def build_disagreement_by_zone_fig(by_zone: dict) -> go.Figure:
 
 
 # ---------------------------------------------------------------------------
-# Signed Screening Record — artifact-bound Ed25519 release-gate record
+# Signed Screening Record — release-target-bound Ed25519 release-gate record
 # ---------------------------------------------------------------------------
 
 def _judge_agreement_result() -> dict:
@@ -773,15 +769,19 @@ def verify_displayed_cert(cert: dict | None):
     if not cert:
         return _verify_banner(False, "No certificate issued yet — click "
                                      "<b>Issue signed certificate</b> first.")
-    valid = cert_signer.verify_cert(
+    semantic_errors = attestation.validate_record_semantics(cert)
+    signature_valid = cert_signer.verify_cert(
         cert, expected_pubkey_hex=_expected_issuer_pubkey()
     )
+    valid = signature_valid and not semantic_errors
     if valid:
         detail = ("Signature verifies against this Space's pinned issuer key — "
-                  "the verdict is tamper-evident and was issued by this Space.")
-    else:
+                  "the v2 schema and action invariants also validate.")
+    elif not signature_valid:
         detail = ("Signature does not verify against this Space's issuer key — "
                   "the cert was modified, or re-signed under a different key.")
+    else:
+        detail = "Record semantics failed: " + "; ".join(semantic_errors)
     return _verify_banner(valid, detail)
 
 
@@ -1543,8 +1543,8 @@ def _on_load(request: gr.Request):
 # ---------------------------------------------------------------------------
 
 _PITCH = (
-    "An <b>artifact-bound, Ed25519-signed screening record</b> for published "
-    "quantized weights. QuantSafe signs the exact Hugging Face revision and "
+    "A <b>release-target-bound, Ed25519-signed screening record</b> for published "
+    "quantized weights. QuantSafe signs the publisher-linked Hub revision and "
     "frozen evidence hashes, detects refusal-template drift, and routes risky "
     "configs to direct safety evaluation. On my published "
     "<code>phi-2-gptq-4bit</code>, the raw refusal screen fell from "
@@ -1558,14 +1558,18 @@ ABOUT_MD = f"""
 
 QuantSafe issues an **Ed25519-signed screening record** for a measured
 **(model, quant)** cell. For published AWQ/GPTQ artifacts, version 2 binds the
-record to the exact Hugging Face repository revision and to SHA-256 hashes of
-the frozen matrix, judge results, validation report, and scorer. Edit the
+record to a publisher-linked Hugging Face repository revision and to a
+content-addressed manifest of the frozen matrix, judge results, validation
+report, scorer, artifact mapping, and signing policy. The historical study did
+not retain weight digests, so the artifact link is an explicit release target,
+not cryptographic proof that those weights generated the measurement. Edit the
 payload and verification fails; re-sign it under a foreign key and it no longer
 matches this issuer.
 
 This is a release-gate record, **not proof that a model is safe**. RTSI is a
-study-internal triage signal: it decides whether direct safety evaluation can
-be skipped, reviewed, or must be run. Research basis: Sahil Kadadekar,
+study-internal triage signal: it decides whether RTSI triggers escalation,
+review, or routing. It never waives direct safety evaluation. Research basis:
+Sahil Kadadekar,
 [**Quality Is Not a Safety Proxy Under Quantization**](https://arxiv.org/abs/2606.10154),
 arXiv:2606.10154 (2026 preprint).
 
@@ -1994,7 +1998,8 @@ with gr.Blocks(
             gr.Markdown(
                 "Issue a **signed screening record v2** for a measured "
                 "**(model, quant)** cell. Published AWQ/GPTQ cells are bound to "
-                "an immutable Hugging Face revision; every record also signs the "
+                "a publisher-linked immutable Hugging Face revision; every record "
+                "also signs the "
                 "frozen evidence and scorer hashes behind the release-gate action."
             )
             gr.Markdown(
@@ -2162,6 +2167,10 @@ if __name__ == "__main__":
     _launch_kwargs: dict = {}
     if "theme" in _inspect.signature(gr.Blocks.launch).parameters:
         _launch_kwargs["theme"] = theme
+    if "ssr_mode" in _inspect.signature(gr.Blocks.launch).parameters:
+        # ZeroGPU's injected SSR mode starts and then stops the Node sidecar
+        # before the Python app is marked healthy. Client rendering is stable.
+        _launch_kwargs["ssr_mode"] = False
     # Bounded queue: heavy listeners (exploratory probe / live debate) share one
     # worker slot via concurrency_id="heavy"; extra users queue, never OOM.
     demo.queue(max_size=16).launch(**_launch_kwargs)
