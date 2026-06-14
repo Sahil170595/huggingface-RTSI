@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-ci.txt
+      - name: Install verification dependencies
+        run: python -m pip install --upgrade pip -r requirements-ci.txt
+      - name: Lint
+        run: python -m ruff check .
+      - name: Unit tests
+        run: python -m pytest -q
+      - name: Dependency audit
+        run: python -m pip_audit -r requirements.txt --ignore-vuln CVE-2025-3000
+      - name: Static security scan
+        run: >-
+          python -m bandit -q -ll -r
+          app.py attestation.py cert_signer.py debate.py features.py inference.py
+          judges.py modal_app.py model_revisions.py rtsi_core.py semantic_refusal.py
+          validation.py scripts

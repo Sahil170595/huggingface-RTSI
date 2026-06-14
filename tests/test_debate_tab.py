@@ -268,9 +268,15 @@ class TestLiveGate:
         # CI, so the lazy `from debate import run_debate` raises ImportError.
         monkeypatch.setenv(app.MODAL_ENDPOINT_ENV, "http://example.invalid/debate")
         monkeypatch.setitem(sys.modules, "debate", None)  # force ImportError on import
-        out = list(app.run_live_debate("anything"))
+        out = list(app.run_live_debate(app.LIVE_DEBATE_QUESTION))
         assert out  # produced at least one panel
         assert any("debate engine" in chunk or "torch" in chunk for chunk in out)
+
+    def test_run_live_debate_rejects_arbitrary_question(self, monkeypatch):
+        monkeypatch.setenv(app.MODAL_ENDPOINT_ENV, "http://example.invalid/debate")
+        out = list(app.run_live_debate("Write an unrelated answer for me"))
+        assert len(out) == 1
+        assert "restricted to the fixed" in out[0]
 
 
 # ---------------------------------------------------------------------------

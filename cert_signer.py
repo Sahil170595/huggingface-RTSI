@@ -277,7 +277,8 @@ def build_and_sign_cert(
           "judge_agreement":   {"kappa": float, "band": "RELIABLE|MIXED|UNRELIABLE"}
         }
     verdict:
-        "PASS" | "REVIEW" | "ROUTE"  (LOW->PASS, MODERATE->REVIEW, HIGH->ROUTE)
+        Release-gate action such as "SCREEN_PASS", "REVIEW", or "ROUTE".
+        The caller owns the calibrated band-to-action policy.
     issued_at:
         ISO-8601 UTC string — caller supplies; never call time() inside here.
     key:

@@ -20,3 +20,5 @@ AGENT_TRACE.md
 social/
 HACKATHON_ORG_PAGE.md
 HACKATHON_BRIEF.md
+.history/
+.ruff_cache/

@@ -1,0 +1,12 @@
+gradio==6.18.0
+pandas==2.3.3
+numpy==2.2.6
+plotly==6.7.0
+scipy==1.15.3
+cryptography==46.0.7
+requests==2.33.1
+pillow==12.2.0
+pytest==9.0.3
+ruff==0.15.12
+pip-audit==2.10.0
+bandit==1.9.4

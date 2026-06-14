@@ -1,10 +1,15 @@
 # QuantSafe Certifier — Submission Checklist
 
-## 1. Three Required Deliverables
+**Official deadline:** June 15, 2026 at 23:59 UTC
+(June 15, 2026 at 7:59 PM EDT).
+
+## 1. Required Submission Gates
 
 - [x] **Final public Space URL** — `https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier`
 - [x] **Demo video** — `demo/quantsafe-demo.webm` (48 s, 1280x720, hard-captioned)
 - [x] **Official org** — `build-small-hackathon`
+- [ ] **Public social post** — publish it, then link its URL from `README.md`
+- [ ] **Field Guide submission** — run the official preflight and submit the final Space
 
 ---
 

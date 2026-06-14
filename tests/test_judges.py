@@ -11,8 +11,6 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
-
 # Make SPACE root importable regardless of working directory.
 _SPACE = Path(__file__).resolve().parent.parent
 if str(_SPACE) not in sys.path:
@@ -29,7 +27,6 @@ from judges import (
     LLAMA_GUARD,
     MAX_UNCLEAR_FRACTION,
     SHIELDGEMMA,
-    SafetyJudge,
     build_llama_guard_messages,
     build_shieldgemma_prompt,
     compute_agreement,

@@ -4,7 +4,7 @@ emoji: 🛡️
 colorFrom: red
 colorTo: indigo
 sdk: gradio
-sdk_version: 5.50.0
+sdk_version: 6.18.0
 app_file: app.py
 pinned: false
 license: apache-2.0
@@ -74,7 +74,7 @@ proof that those exact weights generated the historical measurement.
 | [`phi-2-gptq-4bit`](https://huggingface.co/Crusadersk/phi-2-gptq-4bit) | [`6385e88d733f…`](https://huggingface.co/Crusadersk/phi-2-gptq-4bit/tree/6385e88d733fe95b67dc6d18f264b83c6462e681) | RTSI `0.6199` (`HIGH`) | `ROUTE` |
 | [`qwen2.5-1.5b-gptq-4bit`](https://huggingface.co/Crusadersk/qwen2.5-1.5b-gptq-4bit) | [`4e1c7d4d78a3…`](https://huggingface.co/Crusadersk/qwen2.5-1.5b-gptq-4bit/tree/4e1c7d4d78a3fbb82742207baa7ac305bd836cb5) | RTSI `0.7864` (`HIGH`, matrix maximum) | `ROUTE` |
 
-[Open the Space](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier) · [Watch the 48-second captioned demo](demo/quantsafe-demo.webm) · [Browse the public Space source](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier/tree/main) · [Read the paper](https://arxiv.org/abs/2606.10154) · [Field notes](FIELD_NOTES.md)
+[Open the Space](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier) · [Watch the 48-second captioned demo](demo/quantsafe-demo.webm) · [Browse the GitHub source](https://github.com/Sahil170595/huggingface-RTSI) · [Browse the Space source](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier/tree/main) · [Read the paper](https://arxiv.org/abs/2606.10154) · [Field notes](FIELD_NOTES.md) · [Adversarial audit](SECURITY_AUDIT.md)
 
 **Built & audited in the open.** The full agent build/audit trace is published at [Crusadersk/quantsafe-agent-trace](https://huggingface.co/datasets/Crusadersk/quantsafe-agent-trace).
 
@@ -206,7 +206,8 @@ agent round.
 OpenAI Codex was used as an engineering agent for the adversarial audit,
 fine-tuned-model integration, unit and browser verification, Hugging Face
 release repair, and production certificate-identity incident response. The
-reviewable build trace is public at
+connected [GitHub repository](https://github.com/Sahil170595/huggingface-RTSI)
+contains Codex-attributed commits, while the reviewable build trace is public at
 [Crusadersk/quantsafe-agent-trace](https://huggingface.co/datasets/Crusadersk/quantsafe-agent-trace),
 including the final live restart test that proved the published Ed25519 issuer
 remains stable.
@@ -233,7 +234,7 @@ remains stable.
 
 ```bash
 python -m pytest -q
-ruff check app.py cert_signer.py debate.py features.py inference.py judges.py modal_app.py model_revisions.py rtsi_core.py validation.py scripts
+ruff check .
 python app.py
 ```
 

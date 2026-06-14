@@ -243,7 +243,7 @@ def _load_local(model_id: str):
         revision=revision,
         quantization_config=quant_config,
         device_map="cuda",
-        torch_dtype=torch.float16,
+        dtype=torch.float16,
     )
     mdl.eval()
     _local_cache[model_id] = (tok, mdl)

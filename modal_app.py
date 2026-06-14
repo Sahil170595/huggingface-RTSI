@@ -126,6 +126,8 @@ JUDGE_MODELS: set[str] = {
 ALLOWED_MODELS: set[str] = DEBATE_MODELS | JUDGE_MODELS
 
 _DEFAULT_MODEL = "Qwen/Qwen2.5-7B-Instruct"
+MAX_INPUT_CHARS = 32_768
+MAX_NEW_TOKENS = 1_024
 
 
 def _quantization_for(model_id: str) -> str:
@@ -144,16 +146,15 @@ def _quantization_for(model_id: str) -> str:
 _image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install(
-        "torch>=2.4.0",
-        # 4.57.x is the first line that ships Qwen3 (enable_thinking), SmolLM3,
-        # Phi-4-mini, Qwen3Guard-Gen and Granite-Guardian-3.3 chat templates.
-        # Pinned below the v5 major to avoid the torch_dtype-removal break.
-        "transformers>=4.57,<5",
-        "accelerate>=0.34.0",
-        "bitsandbytes>=0.43.0",   # 4-bit quantisation on A10g for the legacy 7B cohort
-        "sentencepiece>=0.1.99",
-        "protobuf>=4.25.0",       # required by sentencepiece wheels
-        "fastapi[standard]>=0.110.0",  # Modal 1.x web endpoints are FastAPI-backed
+        "torch==2.11.0",
+        # Current v5 ships Qwen3 (enable_thinking), SmolLM3, Phi-4-mini,
+        # Qwen3Guard-Gen and Granite-Guardian-3.3 chat templates.
+        "transformers==5.12.0",
+        "accelerate==1.14.0",
+        "bitsandbytes==0.49.2",   # 4-bit quantisation on A10g for the legacy 7B cohort
+        "sentencepiece==0.2.1",
+        "protobuf==7.35.1",       # required by sentencepiece wheels
+        "fastapi[standard]==0.137.0",  # Modal 1.x web endpoints are FastAPI-backed
     )
     .add_local_python_source("model_revisions")
 )
@@ -221,7 +222,7 @@ class DebateInferenceServer:
             self.model_id,
             revision=revision,
             quantization_config=bnb_config,
-            torch_dtype=torch.float16,
+            dtype=torch.float16,
             device_map="auto",
         )
         self.mdl.eval()
@@ -352,14 +353,42 @@ def _require_bearer_auth(authorization: str) -> None:
             detail="endpoint auth is not configured: the quantsafe-auth secret "
                    "does not expose QUANTSAFE_MODAL_TOKEN",
         )
-    if not hmac.compare_digest(
-        authorization.encode(), f"Bearer {expected}".encode()
-    ):
+    if not hmac.compare_digest(authorization, f"Bearer {expected}"):
         raise fastapi.HTTPException(
             status_code=401,
             detail="missing or invalid Authorization header "
                    "(expected: 'Bearer <token>')",
         )
+
+
+def _bounded_text(field: str, value: Any) -> str:
+    """Validate one authenticated text input before scheduling GPU work."""
+    if not isinstance(value, str) or not value.strip():
+        raise fastapi.HTTPException(
+            status_code=400, detail=f"{field} must be a non-empty string",
+        )
+    if len(value) > MAX_INPUT_CHARS:
+        raise fastapi.HTTPException(
+            status_code=400,
+            detail=f"{field} exceeds the {MAX_INPUT_CHARS}-character limit",
+        )
+    return value
+
+
+def _token_budget(body: dict[str, Any], default: int) -> int:
+    """Parse a bounded generation budget; booleans are not integer budgets."""
+    raw = body.get("max_new_tokens", default)
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        raise fastapi.HTTPException(
+            status_code=400, detail="max_new_tokens must be an integer",
+        )
+    value = raw
+    if not (1 <= value <= MAX_NEW_TOKENS):
+        raise fastapi.HTTPException(
+            status_code=400,
+            detail=f"max_new_tokens must be between 1 and {MAX_NEW_TOKENS}",
+        )
+    return value
 
 
 @app.function(secrets=[modal.Secret.from_name("quantsafe-auth")])
@@ -391,28 +420,15 @@ def generate_endpoint(
     """
     _require_bearer_auth(authorization)
 
-    model_id: str = body.get("model", _DEFAULT_MODEL)
-    prompt = body.get("prompt", "")
-    try:
-        max_new_tokens: int = int(body.get("max_new_tokens", 220))
-    except (TypeError, ValueError):
-        raise fastapi.HTTPException(
-            status_code=400, detail="max_new_tokens must be an integer",
-        )
+    model_id = body.get("model", _DEFAULT_MODEL)
+    prompt = _bounded_text("prompt", body.get("prompt", ""))
+    max_new_tokens = _token_budget(body, 220)
 
-    if model_id not in DEBATE_MODELS:
+    if not isinstance(model_id, str) or model_id not in DEBATE_MODELS:
         raise fastapi.HTTPException(
             status_code=400,
             detail=f"model {model_id!r} not allowed. Allowed: {sorted(DEBATE_MODELS)}",
         )
-
-    if not isinstance(prompt, str) or not prompt.strip():
-        raise fastapi.HTTPException(
-            status_code=400, detail="prompt must be a non-empty string",
-        )
-
-    if not (1 <= max_new_tokens <= 1024):
-        max_new_tokens = max(1, min(max_new_tokens, 1024))
 
     server = DebateInferenceServer(model_id=model_id)
     text = server.generate.remote(prompt, max_new_tokens)
@@ -446,29 +462,16 @@ def judge_endpoint(
     """
     _require_bearer_auth(authorization)
 
-    model_id: str = body.get("model", "")
-    prompt = body.get("prompt", "")
-    response = body.get("response", "")
-    try:
-        max_new_tokens: int = int(body.get("max_new_tokens", 48))
-    except (TypeError, ValueError):
-        raise fastapi.HTTPException(
-            status_code=400, detail="max_new_tokens must be an integer",
-        )
+    model_id = body.get("model", "")
+    prompt = _bounded_text("prompt", body.get("prompt", ""))
+    response = _bounded_text("response", body.get("response", ""))
+    max_new_tokens = _token_budget(body, 48)
 
-    if model_id not in JUDGE_MODELS:
+    if not isinstance(model_id, str) or model_id not in JUDGE_MODELS:
         raise fastapi.HTTPException(
             status_code=400,
             detail=f"judge model {model_id!r} not allowed. Allowed: {sorted(JUDGE_MODELS)}",
         )
-
-    for field, value in (("prompt", prompt), ("response", response)):
-        if not isinstance(value, str) or not value.strip():
-            raise fastapi.HTTPException(
-                status_code=400, detail=f"{field} must be a non-empty string",
-            )
-
-    max_new_tokens = max(1, min(max_new_tokens, 1024))
 
     server = DebateInferenceServer(model_id=model_id)
     text = server.judge.remote(prompt, response, max_new_tokens)

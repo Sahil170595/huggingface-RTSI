@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import math
-import os
 import sys
 import warnings
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -19,13 +16,9 @@ if str(_SPACE) not in sys.path:
 
 from features import (
     extract_features,
-    feature_deltas,
     is_refusal,
     live_rtsi,
     load_substrate_feature_rows,
-    normalize_text,
-    prefix5,
-    REFUSAL_OPENERS,
 )
 from rtsi_core import classify_risk, compute_rtsi
 

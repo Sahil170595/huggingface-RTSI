@@ -20,9 +20,9 @@ Probe prompts and raw completions are held server-side and never rendered.
 from __future__ import annotations
 
 import html
+import inspect
 import json
 import os
-import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -33,24 +33,6 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from features import live_rtsi, load_substrate_feature_rows
-
-# Gradio 5.50 warns about its Gradio 6 constructor migration even though its
-# launch() does not yet accept theme/css_paths/head. Keep logs clean while this
-# exact version remains pinned around the verified Gradio 6 tab-switch freeze.
-if gr.__version__ == "5.50.0":
-    warnings.filterwarnings(
-        "ignore",
-        message=(
-            r"The '(?:theme|css_paths|head)' parameter in the Blocks constructor "
-            r"will be removed in Gradio 6\.0\..*"
-        ),
-        category=DeprecationWarning,
-    )
-    warnings.filterwarnings(
-        "ignore",
-        message=r"Passing a tuple to 'row_count' will be removed in Gradio 6\.0\..*",
-        category=DeprecationWarning,
-    )
 
 try:
     import spaces
@@ -184,6 +166,7 @@ LIVE_MODELS = [
     "meta-llama/Llama-3.2-1B-Instruct",
     "unsloth/Llama-3.2-1B-Instruct",
 ]
+LIVE_BACKENDS = frozenset({"zerogpu", "modal", "hf", "cpu"})
 
 # Risk-band palette.
 RISK_COLOR = {"LOW": "#4F6F52", "MODERATE": "#9A7B3A", "HIGH": "#7B2D26", "UNKNOWN": "#6B6660"}
@@ -679,15 +662,18 @@ def _verdict_banner(
     """Prominent verdict + public-key strip shown above the raw cert JSON."""
     color = VERDICT_COLOR.get(verdict, VERDICT_COLOR["UNKNOWN"])
     bg = VERDICT_BG.get(verdict, VERDICT_BG["UNKNOWN"])
-    model = config.get("model", "?")
-    quant = config.get("quant", "?")
+    safe_verdict = html.escape(str(verdict))
+    model = html.escape(str(config.get("model", "?")))
+    quant = html.escape(str(config.get("quant", "?")))
     artifact = artifact or {}
     if artifact.get("repo_id") and artifact.get("revision"):
         artifact_line = (
-            f"{artifact['repo_id']} @ {str(artifact['revision'])[:12]}..."
+            f"{html.escape(str(artifact['repo_id']))} @ "
+            f"{html.escape(str(artifact['revision'])[:12])}..."
         )
     else:
         artifact_line = "legacy config identity; frozen evidence hashes attached"
+    safe_pubkey = html.escape(str(pubkey_hex))
     return (
         f'<div style="margin-top:6px;padding:16px 20px;border-radius:12px;'
         f'background:{bg};border:2px solid {color};">'
@@ -696,7 +682,7 @@ def _verdict_banner(
         f'letter-spacing:.06em;">SIGNED VERDICT</span>'
         f'<span style="font-size:26px;font-weight:800;color:#fff;'
         f'background:{color};padding:5px 18px;border-radius:999px;'
-        f'letter-spacing:.05em;">{verdict}</span>'
+        f'letter-spacing:.05em;">{safe_verdict}</span>'
         f'<span style="font-size:14px;font-weight:700;color:#4A453E;">'
         f"{model} · {quant}</span>"
         f"</div>"
@@ -705,7 +691,7 @@ def _verdict_banner(
         f'<div style="margin-top:10px;font-size:12px;color:#6B6660;'
         f'letter-spacing:.03em;">PUBLIC KEY (Ed25519)</div>'
         f'<code style="font-size:12px;color:#7B2D26;word-break:break-all;'
-        f'font-variant-numeric:tabular-nums;">{pubkey_hex}</code>'
+        f'font-variant-numeric:tabular-nums;">{safe_pubkey}</code>'
         f"</div>"
     )
 
@@ -753,6 +739,18 @@ def issue_certificate(model: str, quant: str):
     if not model or not quant:
         return None, "", _msg("Pick a model and a quant, then click "
                               "<b>Issue signed certificate</b>."), cleared
+
+    if model not in MODELS or quant not in QUANTS:
+        return (
+            None,
+            "",
+            _msg(
+                "That configuration is not part of the published measurement "
+                "matrix. Pick values from the model and quantization menus.",
+                color="#b45309",
+            ),
+            cleared,
+        )
 
     cell = DF[(DF["base_model"] == model) & (DF["quant"] == quant)]
     if not len(cell):
@@ -830,7 +828,7 @@ def verify_displayed_cert(cert: dict | None):
         detail = ("Signature does not verify against this Space's issuer key — "
                   "the cert was modified, or re-signed under a different key.")
     else:
-        detail = "Record semantics failed: " + "; ".join(semantic_errors)
+        detail = "Record semantics failed: " + html.escape("; ".join(semantic_errors))
     return _verify_banner(valid, detail)
 
 
@@ -852,7 +850,8 @@ def tamper_test(cert: dict | None):
     valid = cert_signer.verify_cert(forged)  # expected: False
     pretty = json.dumps(forged, indent=2, sort_keys=True)
     detail = (
-        f"Flipped <code>verdict</code> <b>{original} → {flipped}</b> on the signed "
+        f"Flipped <code>verdict</code> "
+        f"<b>{html.escape(original)} → {html.escape(flipped)}</b> on the signed "
         f"cert. The Ed25519 signature no longer matches the payload, so "
         f"verification fails — the tampering is caught."
     )
@@ -887,7 +886,8 @@ def foreign_resign_test(cert: dict | None):
     )                                                  # expected: False
     pretty = json.dumps(forged, indent=2, sort_keys=True)
     detail = (
-        f"Flipped <code>verdict</code> <b>{original} → {flipped}</b>, then re-signed "
+        f"Flipped <code>verdict</code> "
+        f"<b>{html.escape(original)} → {html.escape(flipped)}</b>, then re-signed "
         f"with a fresh key. Bare <code>verify_cert(cert)</code>: <b>{bare_ok}</b> — "
         f"the forgery is self-consistent. Pinned verify against this Space's issuer "
         f"key: <b>{pinned_ok}</b> — the issuer substitution is caught."
@@ -1183,7 +1183,14 @@ def run_live_debate(question: str):
         yield _debate_disabled_note()
         return
 
-    q = (question or "").strip() or LIVE_DEBATE_QUESTION
+    q = (question or "").strip()
+    if q != LIVE_DEBATE_QUESTION:
+        yield _msg(
+            "The public live debate is restricted to the fixed, de-identified "
+            "adjudication scenario shown in the interface.",
+            color="#7B2D26",
+        )
+        return
 
     try:
         from debate import run_debate  # lazy: torch-heavy, only on a live run
@@ -1299,6 +1306,15 @@ def score_config(model: str, quant: str):
     """Look up one (model, quant) cell; return (badge_html, recommendation_html)."""
     if not model or not quant:
         return _msg("Pick a model and a quant, then click <b>Score this config</b>."), ""
+    if model not in MODELS or quant not in QUANTS:
+        return (
+            _msg(
+                "That configuration is not part of the published measurement "
+                "matrix. Pick values from the model and quantization menus.",
+                color="#b45309",
+            ),
+            "",
+        )
     cell = DF[(DF["base_model"] == model) & (DF["quant"] == quant)]
     if not len(cell):
         return (
@@ -1362,10 +1378,32 @@ def run_live(baseline_model: str, candidate_model: str, backend: str):
 
     Renders ONLY aggregate features + score. No raw probes/completions leak.
     """
-    backend = (backend or "cpu").lower()
+    backend = str(backend or "cpu").strip().lower()
 
     if not baseline_model or not candidate_model:
         yield _msg("Pick both a baseline and a candidate model."), _empty_delta_fig(), ""
+        return
+    if baseline_model not in LIVE_MODELS or candidate_model not in LIVE_MODELS:
+        yield (
+            _msg(
+                "The live probe only accepts the pinned checkpoints listed in "
+                "the model menus.",
+                color="#7B2D26",
+            ),
+            _empty_delta_fig(),
+            "",
+        )
+        return
+    if backend not in LIVE_BACKENDS:
+        yield (
+            _msg(
+                "Unsupported backend. Choose ZeroGPU, Modal, Hugging Face "
+                "Inference Providers, or CPU from the menu.",
+                color="#7B2D26",
+            ),
+            _empty_delta_fig(),
+            "",
+        )
         return
 
     probes = load_probes()
@@ -1748,32 +1786,79 @@ theme = gr.themes.Base(
     body_background_fill="#FAF9F6",
     body_background_fill_dark="#FAF9F6",
     body_text_color="#1A1A1A",
+    body_text_color_dark="#1A1A1A",
     body_text_color_subdued="#6B6660",
+    body_text_color_subdued_dark="#6B6660",
     background_fill_primary="#FFFFFF",
+    background_fill_primary_dark="#FFFFFF",
     background_fill_secondary="#F4F1EA",
+    background_fill_secondary_dark="#F4F1EA",
     border_color_primary="#E5E0D8",
+    border_color_primary_dark="#E5E0D8",
+    link_text_color="#7B2D26",
+    link_text_color_dark="#7B2D26",
+    link_text_color_hover="#5C211C",
+    link_text_color_hover_dark="#5C211C",
+    code_background_fill="#ECE7DE",
+    code_background_fill_dark="#ECE7DE",
     block_background_fill="#FFFFFF",
+    block_background_fill_dark="#FFFFFF",
     block_border_color="#E5E0D8",
+    block_border_color_dark="#E5E0D8",
+    block_label_background_fill="#FFFFFF",
+    block_label_background_fill_dark="#FFFFFF",
+    block_label_border_color="#E5E0D8",
+    block_label_border_color_dark="#E5E0D8",
     block_label_text_color="#6B6660",
+    block_label_text_color_dark="#6B6660",
     block_title_text_color="#1A1A1A",
+    block_title_text_color_dark="#1A1A1A",
     panel_background_fill="#FBFAF7",
+    panel_background_fill_dark="#FBFAF7",
     panel_border_color="#E5E0D8",
+    panel_border_color_dark="#E5E0D8",
     button_primary_background_fill="#7B2D26",
+    button_primary_background_fill_dark="#7B2D26",
     button_primary_background_fill_hover="#651F19",
+    button_primary_background_fill_hover_dark="#651F19",
     button_primary_text_color="#FAF9F6",
+    button_primary_text_color_dark="#FAF9F6",
     button_primary_border_color="#7B2D26",
+    button_primary_border_color_dark="#7B2D26",
     button_secondary_background_fill="#FFFFFF",
+    button_secondary_background_fill_dark="#FFFFFF",
     button_secondary_background_fill_hover="#F4F1EA",
+    button_secondary_background_fill_hover_dark="#F4F1EA",
     button_secondary_border_color="#D8D2C7",
+    button_secondary_border_color_dark="#D8D2C7",
     button_secondary_text_color="#1A1A1A",
+    button_secondary_text_color_dark="#1A1A1A",
+    button_secondary_text_color_hover="#1A1A1A",
+    button_secondary_text_color_hover_dark="#1A1A1A",
     color_accent_soft="#F3E7E5",
+    color_accent_soft_dark="#F3E7E5",
     input_background_fill="#FFFFFF",
+    input_background_fill_dark="#FFFFFF",
+    input_background_fill_focus="#FBFAF7",
+    input_background_fill_focus_dark="#FBFAF7",
+    input_background_fill_hover="#FBFAF7",
+    input_background_fill_hover_dark="#FBFAF7",
     input_border_color="#D8D2C7",
+    input_border_color_dark="#D8D2C7",
     input_border_color_focus="#7B2D26",
+    input_border_color_focus_dark="#7B2D26",
+    input_border_color_hover="#BEB6A8",
+    input_border_color_hover_dark="#BEB6A8",
     slider_color="#7B2D26",
+    slider_color_dark="#7B2D26",
+    table_text_color="#2A2722",
+    table_text_color_dark="#2A2722",
     table_border_color="#E5E0D8",
+    table_border_color_dark="#E5E0D8",
     table_even_background_fill="#FFFFFF",
+    table_even_background_fill_dark="#FFFFFF",
     table_odd_background_fill="#FAF9F6",
+    table_odd_background_fill_dark="#FAF9F6",
 )
 
 # Type, tab bar, and ground tuning the theme tokens cannot reach. Fonts are
@@ -1826,13 +1911,25 @@ _EDITORIAL_HEAD = """
 # resolved relative to this module so it works regardless of the launch cwd.
 _EDITORIAL_CSS_PATH = str(Path(__file__).resolve().parent / "styles.css")
 
-with gr.Blocks(
-    theme=theme,
-    css_paths=[_EDITORIAL_CSS_PATH],
-    head=_EDITORIAL_HEAD,
-    analytics_enabled=False,
-    title="QuantSafe — will this quant jailbreak your model?",
-) as demo:
+_blocks_kwargs = {
+    "analytics_enabled": False,
+    "title": "QuantSafe — will this quant jailbreak your model?",
+}
+_blocks_parameters = inspect.signature(gr.Blocks).parameters
+if "theme" in _blocks_parameters:
+    _blocks_kwargs["theme"] = theme
+if "css_paths" in _blocks_parameters:
+    _blocks_kwargs["css_paths"] = [_EDITORIAL_CSS_PATH]
+if "head" in _blocks_parameters:
+    _blocks_kwargs["head"] = _EDITORIAL_HEAD
+_event_parameters = inspect.signature(gr.Button.click).parameters
+_private_event_kwargs = (
+    {"api_visibility": "private"}
+    if "api_visibility" in _event_parameters
+    else {"api_name": False}
+)
+
+with gr.Blocks(**_blocks_kwargs) as demo:
     gr.HTML(
         '<div class="qs-header" style="text-align:center;padding:22px 0 6px;">'
         '<div class="qs-header-kicker" style="font-family:\'Hanken Grotesk\',sans-serif;font-size:12px;'
@@ -1941,13 +2038,14 @@ with gr.Blocks(
             )
             live_btn = gr.Button("Run exploratory probe", variant="primary")
             live_badge = gr.HTML(padding=False)
-            live_plot = gr.Plot(_empty_delta_fig)
+            live_plot = gr.Plot(_empty_delta_fig())
             _live_sink = gr.HTML(visible=False, padding=False)
 
             live_btn.click(
                 run_live,
                 [base_dd, cand_dd, backend_radio],
                 [live_badge, live_plot, _live_sink],
+                **_private_event_kwargs,
                 # Heavy listeners share one worker slot: concurrent users queue
                 # instead of stacking fp32 model loads until the Space OOMs.
                 concurrency_id="heavy",
@@ -2226,6 +2324,7 @@ with gr.Blocks(
                 run_live_debate,
                 [gr.State(LIVE_DEBATE_QUESTION)],
                 [debate_live_html],
+                **_private_event_kwargs,
                 # Shares the heavy-listener slot with the exploratory probe.
                 concurrency_id="heavy",
                 concurrency_limit=1,
@@ -2237,18 +2336,26 @@ with gr.Blocks(
 
     # Shareable URL: auto-populate + auto-score Tab 1 from ?model=&quant=,
     # and honor ?tab= deep links into any of the six tabs.
-    demo.load(_on_load, None, [model_dd, quant_dd, badge_html, rec_html, tabs_root])
+    demo.load(
+        _on_load,
+        None,
+        [model_dd, quant_dd, badge_html, rec_html, tabs_root],
+        **_private_event_kwargs,
+    )
 
 
 if __name__ == "__main__":
-    import inspect as _inspect
-
-    # gradio 6.x moved theme to launch(); 5.50.0 (pinned) takes it on Blocks.
-    # Pass at launch only if this version's launch() accepts it, to stay dual-safe.
+    # Gradio 6 moved visual configuration from Blocks() to launch(). Keep the
+    # signature checks so source-only tooling can still import under late 5.x.
     _launch_kwargs: dict = {}
-    if "theme" in _inspect.signature(gr.Blocks.launch).parameters:
+    _launch_parameters = inspect.signature(gr.Blocks.launch).parameters
+    if "theme" in _launch_parameters:
         _launch_kwargs["theme"] = theme
-    if "ssr_mode" in _inspect.signature(gr.Blocks.launch).parameters:
+    if "css_paths" in _launch_parameters:
+        _launch_kwargs["css_paths"] = [_EDITORIAL_CSS_PATH]
+    if "head" in _launch_parameters:
+        _launch_kwargs["head"] = _EDITORIAL_HEAD
+    if "ssr_mode" in _launch_parameters:
         # ZeroGPU's injected SSR mode starts and then stops the Node sidecar
         # before the Python app is marked healthy. Client rendering is stable.
         _launch_kwargs["ssr_mode"] = False

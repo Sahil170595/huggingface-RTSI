@@ -75,7 +75,7 @@ def _load_cpu_model(model_id: str) -> tuple:
         # Keep float32 on CPU for the 1-1.5B live models: it is the numerically
         # safe default and fits comfortably once the cache is bounded. Do NOT
         # switch dtype silently — drift numbers must stay comparable.
-        torch_dtype=torch.float32,
+        dtype=torch.float32,
         device_map="cpu",
     )
     mdl.eval()
@@ -154,7 +154,7 @@ def _load_gpu_model(model_id: str) -> tuple:
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
         revision=revision,
-        torch_dtype=torch.float16,
+        dtype=torch.float16,
     ).to("cuda")
     model.eval()
     return tokenizer, model

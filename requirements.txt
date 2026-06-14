@@ -1,13 +1,14 @@
-gradio==5.50.0  # pinned: 5.50.0 picks up the gradio 5.x security fixes while avoiding the 6.x tab-switch hang verified on 6.14.0 (only the default tab renders; others freeze on click)
+gradio==6.18.0  # current secure release; includes the Svelte 5 Tabs migration and api_name=False privacy fix
 spaces==0.50.4  # ZeroGPU allocation decorator; injected by HF and pinned here for reproducibility
 pandas==2.3.3
 numpy==2.2.6  # latest NumPy supporting the ZeroGPU Python 3.10 image
 plotly==6.7.0
 scipy==1.15.3  # latest SciPy supporting Python 3.10
-transformers==4.57.6
-accelerate==1.13.0
+transformers==5.12.0
+accelerate==1.14.0
 torch==2.11.0  # supported by ZeroGPU and preinstalled in the Space image
-huggingface_hub==0.36.2
+huggingface_hub==1.19.0
 cryptography==46.0.7
 requests==2.33.1  # explicit: the modal backend imports it
+pillow==12.2.0  # explicit secure floor for Gradio's image dependency
 # modal  # optional: sponsor-lane GPU accelerator, see modal_app.py

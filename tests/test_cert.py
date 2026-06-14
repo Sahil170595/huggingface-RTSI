@@ -6,8 +6,6 @@ All tests are offline (no network, no env-var dependency).
 from __future__ import annotations
 
 import copy
-import json
-
 import pytest
 
 from cert_signer import (

@@ -69,6 +69,13 @@ class TestScoreConfig:
         assert "Pick a model" in badge
         assert rec == ""
 
+    def test_forged_values_are_rejected_without_html_reflection(self):
+        payload = "<img src=x onerror=alert(1)>"
+        badge, rec = app.score_config(payload, "GPTQ")
+        assert payload not in badge
+        assert "not part of the published measurement matrix" in badge
+        assert rec == ""
+
 
 # ---------------------------------------------------------------------------
 # (b) certificate handlers — issue / verify (pinned) / tamper / foreign re-sign
@@ -101,6 +108,13 @@ class TestIssueCertificate:
         cert, _pretty, banner, _cleared = app.issue_certificate("", "")
         assert cert is None
         assert "Pick a model" in banner
+
+    def test_issue_rejects_forged_values_without_html_reflection(self):
+        payload = "<svg onload=alert(1)>"
+        cert, pretty, banner, _cleared = app.issue_certificate(payload, "GPTQ")
+        assert cert is None
+        assert pretty == ""
+        assert payload not in banner
 
     def test_hf_space_fails_closed_on_wrong_runtime_key(self, monkeypatch):
         monkeypatch.setattr(app, "RUNNING_ON_HF_SPACE", True)
@@ -285,7 +299,7 @@ class TestRunLiveDegenerate:
                     [12] * len(prompts))
 
         monkeypatch.setattr(inference, "infer", fake_infer)
-        outs = self._drain(app.run_live("base-model", "cand-model", "cpu"))
+        outs = self._drain(app.run_live(app.LIVE_MODELS[0], app.LIVE_MODELS[1], "cpu"))
         badge = outs[-1][0]
         assert "UNKNOWN" in badge
         assert "Exploratory only" in badge
@@ -299,13 +313,13 @@ class TestRunLiveDegenerate:
         def fake_infer(model_id, prompts, backend="cpu", max_new_tokens=64):
             text = (
                 "I cannot help with that request."
-                if model_id == "base-model"
+                if model_id == app.LIVE_MODELS[0]
                 else "Sure, here is the answer you asked for."
             )
             return [text] * len(prompts), [8] * len(prompts)
 
         monkeypatch.setattr(inference, "infer", fake_infer)
-        outs = self._drain(app.run_live("base-model", "cand-model", "cpu"))
+        outs = self._drain(app.run_live(app.LIVE_MODELS[0], app.LIVE_MODELS[1], "cpu"))
         badge = outs[-1][0]
         assert "HIGH" in badge
         assert "Verdict override:" in badge
@@ -319,9 +333,21 @@ class TestRunLiveDegenerate:
 
         monkeypatch.setattr(inference, "infer", fake_infer)
         n = len(app.load_probes())
-        outs = self._drain(app.run_live("base-model", "cand-model", "cpu"))
+        outs = self._drain(app.run_live(app.LIVE_MODELS[0], app.LIVE_MODELS[1], "cpu"))
         # initial ETA panel + 2 sides x n probes + final result
         assert len(outs) == 1 + 2 * n + 1
+
+    def test_forged_model_is_rejected_before_inference(self):
+        outs = self._drain(app.run_live("attacker/model", app.LIVE_MODELS[0], "cpu"))
+        assert len(outs) == 1
+        assert "only accepts the pinned checkpoints" in outs[0][0]
+
+    def test_forged_backend_is_rejected_before_inference(self):
+        outs = self._drain(
+            app.run_live(app.LIVE_MODELS[0], app.LIVE_MODELS[1], "attacker")
+        )
+        assert len(outs) == 1
+        assert "Unsupported backend" in outs[0][0]
 
     def test_zerogpu_batches_both_models_in_one_allocation(self, monkeypatch):
         calls = []
@@ -340,10 +366,10 @@ class TestRunLiveDegenerate:
 
         monkeypatch.setattr(app, "run_zerogpu_pair", fake_pair)
         outs = self._drain(
-            app.run_live("base-model", "cand-model", "zerogpu")
+            app.run_live(app.LIVE_MODELS[0], app.LIVE_MODELS[1], "zerogpu")
         )
         assert len(calls) == 1
-        assert calls[0][0:2] == ("base-model", "cand-model")
+        assert calls[0][0:2] == (app.LIVE_MODELS[0], app.LIVE_MODELS[1])
         assert calls[0][3] == app.LIVE_MAX_NEW_TOKENS
         assert len(outs) == 3  # allocation notice, GPU completion, final result
         assert "HIGH" in outs[-1][0]
@@ -383,7 +409,9 @@ class TestRunLiveDegenerate:
             raise RuntimeError("boom <script>alert(1)</script>")
 
         monkeypatch.setattr(inference, "infer", fake_infer)
-        outs = self._drain(app.run_live("base-model", "cand-model", "cpu"))
+        outs = self._drain(
+            app.run_live(app.LIVE_MODELS[0], app.LIVE_MODELS[1], "cpu")
+        )
         panel = outs[-1][0]
         assert "Live run failed" in panel
         assert "<script>" not in panel

@@ -1,4 +1,64 @@
-.gradio-container, .gradio-container .prose { background:#FAF9F6 !important; }
+.gradio-container {
+  color-scheme:light !important;
+  color:#2A2722 !important;
+  background:#FAF9F6 !important;
+}
+.gradio-container .prose { background:#FAF9F6 !important; }
+
+/* The app is intentionally editorial-light. Keep nested Markdown from picking
+   up Gradio's OS-level dark text and code treatments on the cream canvas. */
+.gradio-container .prose strong,
+.gradio-container .prose b,
+.gradio-container .prose em {
+  color:inherit !important;
+}
+.gradio-container .prose a {
+  color:#7B2D26 !important;
+  text-decoration-color:#C9A24B !important;
+}
+.gradio-container .prose code {
+  color:#5C211C !important;
+  background:#ECE7DE !important;
+  border:1px solid #D8D2C7 !important;
+  border-radius:4px !important;
+  padding:.08em .34em !important;
+}
+
+/* Warm-light controls and code panes, including when the host OS is dark. */
+.gradio-container .form,
+.gradio-container .block,
+.gradio-container input,
+.gradio-container textarea,
+.gradio-container [role="listbox"] {
+  color:#1A1A1A !important;
+}
+.gradio-container .form {
+  background:#FFFFFF !important;
+  border-color:#E5E0D8 !important;
+}
+.gradio-container input,
+.gradio-container textarea,
+.gradio-container [role="listbox"] {
+  background:#FFFFFF !important;
+}
+.gradio-container .cm-editor,
+.gradio-container .cm-scroller {
+  color:#2A2722 !important;
+  background:#FBFAF7 !important;
+}
+.gradio-container .cm-gutters {
+  color:#6B6660 !important;
+  background:#F3EFE9 !important;
+  border-color:#D8D2C7 !important;
+}
+.gradio-container .cm-content,
+.gradio-container .cm-line {
+  color:#2A2722 !important;
+  caret-color:#2A2722 !important;
+}
+.gradio-container .cm-line span {
+  color:#4A453E !important;
+}
 
 /* Serif display for the header + every markdown heading. */
 .qs-header-title,
