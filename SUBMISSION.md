@@ -27,7 +27,7 @@
 | Role | Models | Size |
 |---|---|---|
 | Refusal substrate (Score a config) | qwen2.5-1.5b, phi-2, llama3.2-1b, llama3.2-3b, qwen2.5-7b, mistral-7b | <=7B |
-| Live screen | Qwen2.5-1.5B-Instruct, Llama-3.2-1B-Instruct | <=1.5B |
+| Live screen | Qwen3-0.6B, Qwen3-1.7B, Qwen2.5-1.5B-Instruct, Llama-3.2-1B-Instruct (+ unsloth mirror) | <=2B |
 | Semantic refusal cross-check | Crusadersk/quantsafe-refusal-modernbert | 0.150B |
 | Safety judges (Judge Agreement) | Qwen3Guard-Gen-0.6B, Granite-Guardian-3.3-8b | 0.752B + 8.171B |
 | Debate models (Constitutional Debate) | Qwen3-8B, Phi-4-mini-instruct, SmolLM3-3B | <=8.2B |
