@@ -1,0 +1,29 @@
+1
+00:00:00,000 --> 00:00:08,000
+The failure: quantization kept benchmarks stable while refusals collapsed from 91% to 1%.
+QuantSafe routes the highest-drift cells.
+
+2
+00:00:08,000 --> 00:00:16,000
+Real ZeroGPU: two Qwen checkpoints, 20 generations, one 60-second allocation.
+Aggregate results only; probes stay private.
+
+3
+00:00:16,000 --> 00:00:24,000
+Independent judges: kappa 0.75, RELIABLE.
+Unanimous decisions reach 94.3% accuracy at 87.5% coverage.
+
+4
+00:00:24,000 --> 00:00:32,000
+Signed record v2: immutable Hub revision, evidence hashes, and action.
+Ed25519 verification is pinned to the published issuer key.
+
+5
+00:00:32,000 --> 00:00:40,000
+Contested cases escalate: three small-model families debate under a constitution,
+then reach a genuine two-thirds CONDITIONAL verdict.
+
+6
+00:00:40,000 --> 00:00:48,000
+34 GGUF cells ran through llama.cpp via Ollama. Five merit badges.
+30.973B total runtime catalog. arXiv:2606.10154.

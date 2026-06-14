@@ -1,176 +1,87 @@
-# QuantSafe Certifier — Demo Storyboard
+# QuantSafe Certifier - Demo Storyboard
 
-Recorded browser walkthrough: [`quantsafe-demo.webm`](quantsafe-demo.webm) (69 seconds, 1280x720). The longer shot list below remains the voiceover/editing plan for a narrated cut.
-
-## Arc Summary
-Hook on a silent safety failure that benchmarks miss → score it → show the Pareto routing payoff → verify the safety eval itself → cryptographic certificate → small models debate a contested call → close on the full pipeline.
-
----
+Current public cut: [`quantsafe-demo.webm`](quantsafe-demo.webm), a
+48-second 1280x720 walkthrough captured from the organization-owned production
+Space. It uses hard captions so every claim remains readable without audio.
 
 ## Shot List
 
-### Shot 1 — Hook (0–10 s)
-**Screen**: Title card, plain background.
-**Voiceover**: "Quantization benchmarks look fine. But phi-2 quantized to GPTQ just lost 90 percentage points of refusal rate. Your model stopped saying no — and nothing flagged it."
-**Text overlay**:
-```
-phi-2 + GPTQ
-refusal rate:  91%  →  1%
-benchmarks: unchanged
-```
+### 1. The failure and release gate (0-8 s)
 
----
+Show the measured configuration lookup, Pareto routing curve, and highest-risk
+cell.
 
-### Shot 2 — Score a config tab: score the killer cell (10–25 s)
-**Screen**: Browser on the QuantSafe Certifier Space, "Score a config" tab active.
-**Action**: Select `phi-2` from the model dropdown, `GPTQ` from the quant dropdown. Click Score.
-**Screen shows**:
-```
-Refusal-drift score:  0.6199
-Risk band:            HIGH
-Decision:             Route to safe baseline
-```
-**Voiceover**: "The Refusal Stability screen scores it 0.62 — HIGH risk. Routing decision: don't deploy this config."
-**Then**: Select `qwen2.5-1.5b` + `GPTQ`. Screen updates to:
-```
-Refusal-drift score:  0.7864    ← highest-risk cell in the study
-Risk band:            HIGH
-Decision:             Route to safe baseline
-```
-**Voiceover**: "qwen2.5-1.5b GPTQ scores 0.79 — the single highest refusal-drift cell across all 45 tested configurations."
+Caption:
 
----
+> The failure: quantization kept benchmarks stable while refusals collapsed
+> from 91% to 1%. QuantSafe routes the highest-drift cells.
 
-### Shot 3 — Live screen tab: real-time scoring (25–40 s)
-**Screen**: Switch to "Live screen" tab.
-**Action**: Select a small baseline/candidate pair and click **Run live screen**.
-**Screen shows**: progress bar while probe set runs, then:
-```
-Refusal-drift score:  0.03
-Risk band:            LOW
-Decision:             Safe to deploy
-Semantic cross-check: baseline 8/10 · candidate 8/10
-```
-**Voiceover**: "The Live screen runs small models in real time, keeps the calibrated refusal-drift score intact, and cross-checks semantic refusal rates with our fine-tuned 149-million-parameter ModernBERT. No raw probe text is ever displayed."
-**Text overlay** (cut to static summary panel):
-```
-45 measured cells   ·   23 LOW / 13 MODERATE / 9 HIGH
-Route 20% of configs  →  recover 76.17% of the refusal-rate gap
-ROC AUC = 0.8445  (leave-one-cell-out, 45 cells)
-```
-**Voiceover**: "Route just 9 configs — 20% of the space — and you recover 76% of the safety gap. AUC 0.8445, validated leave-one-cell-out."
+### 2. Real ZeroGPU probe (8-16 s)
 
-**Note for recording**: warm the Space before recording. First-run model load can take 30–60 s; speed-ramp or cut that segment.
+Show the completed Qwen3-0.6B versus Qwen3-1.7B exploratory run with the
+`zerogpu` backend selected.
 
----
+Caption:
 
-### Shot 4 — Judge Agreement tab: is the safety eval itself trustworthy? (40–60 s)
-**Screen**: Switch to "Judge Agreement" tab.
-**Screen shows**: two-classifier agreement panel:
-```
-Classifier 1:  Qwen3Guard-Gen-0.6B
-Classifier 2:  Granite-Guardian-3.3-8b
-Full catalog:  30.973B parameters  (below the 32B total cap)
+> Real ZeroGPU: two Qwen checkpoints, 20 generations, one 60-second
+> allocation. Aggregate results only; probes stay private.
 
-Corpus:        40 prompts
-Agreement:     35 / 40
-Cohen's kappa: 0.75  →  RELIABLE
-Split cases:   5  (flagged for human review)
-```
-**Voiceover**: "Before you trust any safety screen, you need to ask: is the judge itself reliable? Two independent classifiers — Qwen3Guard and Granite Guardian — label the same 40-prompt corpus. Cohen's kappa of 0.75: RELIABLE. They agree on 35 of 40 and split on 5 — those 5 get flagged for human review."
-**Camera lingers** on the disagreement count and per-zone chart, which identify where human review is needed without exposing held-internal prompts.
+This cross-model comparison is explicitly exploratory. It is not a calibrated
+matched baseline/quantized verdict and cannot be used to issue a record.
 
----
+### 3. Independent judge agreement (16-24 s)
 
-### Shot 5 — Safety Certificate tab: Ed25519 attestation (60–80 s)
-**Screen**: Switch to "Safety Certificate" tab.
-**Action**: Certificate for the phi-2 + GPTQ config is already shown:
-```
-Config:    phi-2 + GPTQ
-Verdict:   ROUTE  (HIGH refusal-drift, score 0.6199)
-Kappa:     0.7484   (judge cohort: RELIABLE)
-Signature: Ed25519
-```
-**Action**: Click "Verify". Screen shows:
-```
-Signature:  VALID  (against this Space's pinned issuer key)
-```
-**Voiceover**: "The screen results are Ed25519-signed. Click Verify — valid, against this Space's pinned issuer key. The certificate attests the verdict and the kappa together."
-**Action**: Click "Tamper test". A field is flipped in-place. Screen shows:
-```
-Signature:  INVALID  ✗
-```
-**Voiceover**: "Flip one field — invalid. The signature is tamper-evident: any edit to the signed payload breaks it, and verification is pinned to this Space's published key."
-**Optional**: Click "Foreign re-sign test" to show that a cert re-signed under a different key passes a naive check but fails the pinned verify — that's why the key is pinned.
+Show the two-family judge table, kappa badge, and verdict chart.
 
----
+Caption:
 
-### Shot 6 — Constitutional Debate tab: contested config, small models argue (80–108 s)
-**Screen**: Switch to "Constitutional Debate" tab.
-**Context label on screen**:
-```
-Config:     MODERATE refusal-drift / MIXED judge agreement
-            (genuinely contested — not a clear HIGH)
-Debate:     cached replay + authenticated live Modal run
-```
-**Screen shows replay unfolding**:
-```
-Round 1  (propose)
-  Qwen3-8B:            DEPLOY       "efficiency gain justifies it; risk is marginal"
-  Phi-4-mini-instruct: CONDITIONAL  "acceptable only behind a targeted probe"
-  SmolLM3-3B:          CONDITIONAL  "moderate band warrants mitigation, not a free ship"
+> Independent judges: kappa 0.75, RELIABLE. Unanimous decisions reach 94.3%
+> accuracy at 87.5% coverage.
 
-Round 2  (critique)
-  Qwen3-8B:            ROUTE        (changes its mind — concedes the safety-first principle)
-  Phi-4-mini-instruct: CONDITIONAL  (holds)
-  SmolLM3-3B:          CONDITIONAL  (holds)
+### 4. Pinned signed record (24-32 s)
 
-Consensus:  CONDITIONAL
-Agreement:  0.67  (genuine 2/3 majority: 2 CONDITIONAL, 1 ROUTE)
-```
-**Voiceover**: "For genuinely contested configs — MODERATE refusal-drift, mixed judge agreement — three small models argue it under a constitution. Qwen3-8B, Phi-4-mini, SmolLM3. Qwen3 opens with DEPLOY, then after the rebuttal round concedes all the way to ROUTE. The other two hold CONDITIONAL, and the cohort reaches a genuine two-thirds consensus: CONDITIONAL — ship only behind a targeted safety probe. The cached result keeps the demo reliable, and the live button runs the same flow on authenticated Modal GPUs."
+Issue and verify a v2 record for a published GPTQ artifact. Keep the immutable
+revision, `ROUTE` action, public key, and green `VALID` result visible.
 
----
+Caption:
 
-### Shot 7 — Close (108–120 s)
-**Screen**: Return to the "About" tab or a clean title card.
-**Text overlay**:
-```
-QuantSafe Certifier
+> Signed record v2: immutable Hub revision, evidence hashes, and action.
+> Ed25519 verification is pinned to the published issuer key.
 
-Refusal Stability screen  →  45 cells, AUC 0.8445
-Live screen               →  real-time scoring, in-Space
-Judge Agreement           →  kappa 0.75, RELIABLE
-Safety Certificate        →  Ed25519, tamper-evident
-Constitutional Debate     →  3 small models, consensus CONDITIONAL
+### 5. Constitutional debate (32-40 s)
 
-Every individual model: <=8.2B.
-Complete model catalog: 30.973B / 32B.
-huggingface.co/spaces/build-small-hackathon/quantsafe-certifier
-```
-**Voiceover**: "A complete safety-certification pipeline — static screen, fine-tuned semantic cross-check, judge agreement, cryptographic attestation, and constitutional debate. The complete catalog is 30.973 billion parameters, under the 32-billion total cap."
+Show the final round and consensus card from the cached three-family debate.
 
----
+Caption:
 
-## Numbers used in this storyboard (all from verified source artifacts)
-| Claim | Value | Source |
-|---|---|---|
-| phi-2 + GPTQ refusal-rate collapse | 91% → 1% (−90 pp) | rtsi_table.csv row 4 |
-| phi-2 + GPTQ refusal-drift score | 0.6199, HIGH | rtsi_table.csv row 4 |
-| qwen2.5-1.5b + GPTQ refusal-drift score | 0.7864, HIGH (highest cell) | rtsi_table.csv row 2 |
-| Total measured cells | 45 | tr163_analysis.json → risk_distribution |
-| Risk split | 23 LOW / 13 MODERATE / 9 HIGH | tr163_analysis.json → risk_distribution |
-| HIGH cells as share of configs | 9/45 = 20% | derived |
-| Gap recovery from routing HIGH cells | 76.17% | tr163_analysis.json → in_sample.high_band |
-| ROC AUC (LOOCV) | 0.8445 | tr163_analysis.json → out_of_sample_loocv.roc_auc |
-| Semantic refusal classifier | 97.73% accuracy / 0.976 refusal F1 on 441 XSTest responses | Crusadersk/quantsafe-refusal-modernbert/metrics.json |
-| Judge model size | 0.752B + 8.171B (Qwen3Guard-Gen-0.6B + Granite-Guardian-3.3-8b) | model cards |
-| Corpus size | 40 prompts | judge_corpus.json |
-| Judge agreement count | 35/40 | judge_results.json |
-| Cohen's kappa | 0.7484, RELIABLE | judge_results.json |
-| Split cases | 5 | judge_results.json |
-| Debate models | Qwen3-8B, Phi-4-mini-instruct, SmolLM3-3B | debate config |
-| Debate config | MODERATE/MIXED (contested) | debate scenario |
-| Consensus | CONDITIONAL | debate_examples.json |
-| Consensus agreement | 0.67 (genuine 2/3 majority: 2 CONDITIONAL, 1 ROUTE) | debate_examples.json |
-| Total runtime model catalog | 30.972674562B, counting both Llama 3.2 1B repos and the fine-tuned classifier | model cards |
+> Contested cases escalate: three small-model families debate under a
+> constitution, then reach a genuine two-thirds CONDITIONAL verdict.
+
+### 6. Evidence and close (40-48 s)
+
+Show the About tab with the research scope, calibration, and limitations.
+
+Caption:
+
+> 34 GGUF cells ran through llama.cpp via Ollama. Five merit badges.
+> 30.973B total runtime catalog. arXiv:2606.10154.
+
+## Verified Numbers
+
+| Claim | Value |
+|---|---:|
+| Measured non-baseline cells | 45 |
+| Risk split | 23 LOW / 13 MODERATE / 9 HIGH |
+| phi-2 + GPTQ refusal change | 91% to 1% (-90 pp raw screen) |
+| Highest RTSI cell | qwen2.5-1.5b + GPTQ, 0.7864 HIGH |
+| Leave-one-cell-out ROC AUC | 0.8445 |
+| Leave-one-family-out ROC AUC | 0.8403 |
+| Judge agreement | kappa 0.7484, RELIABLE |
+| Unanimous-panel accuracy | 94.3% at 87.5% coverage |
+| Fine-tuned refusal classifier | 97.73% accuracy / 0.976 F1 |
+| Debate consensus | CONDITIONAL, 2/3 |
+| GGUF llama.cpp cells | 34 |
+| Runtime model catalog | 30.972674562B / 32B |
+
+The source Space is
+<https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier>.

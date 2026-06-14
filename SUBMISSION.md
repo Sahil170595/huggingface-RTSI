@@ -3,7 +3,7 @@
 ## 1. Three Required Deliverables
 
 - [x] **Final public Space URL** — `https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier`
-- [x] **Demo video** — `demo/quantsafe-demo.webm` (69 s, 1280x720)
+- [x] **Demo video** — `demo/quantsafe-demo.webm` (48 s, 1280x720, hard-captioned)
 - [x] **Official org** — `build-small-hackathon`
 
 ---
