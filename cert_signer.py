@@ -1,7 +1,7 @@
-"""Stage 2 — Ed25519 signed safety certificate.
+"""Ed25519 signed QuantSafe screening record.
 
-Cryptographically attests the result of the two safety screens
-(refusal-drift + judge-agreement) for a (model, quant) config.
+Version 2 signs the screen outputs, release-gate action, immutable artifact
+identity when available, and hashes of the frozen evidence behind the action.
 
 Design mirrors muse/contracts/signing.py (P107.7 precedent):
 - Ed25519 via `cryptography` hazmat (NOT pynacl).
@@ -260,6 +260,8 @@ def build_and_sign_cert(
     verdict: str,
     issued_at: str,
     key: SigningKey,
+    artifact: dict[str, Any] | None = None,
+    evidence: dict[str, Any] | None = None,
     debate_result: Any = None,
     prev_cert_hash: str | None = None,
 ) -> dict:
@@ -280,6 +282,11 @@ def build_and_sign_cert(
         ISO-8601 UTC string — caller supplies; never call time() inside here.
     key:
         SigningKey instance.
+    artifact:
+        Immutable model artifact identity when available. Legacy matrix cells
+        may explicitly use a config-only scope instead.
+    evidence:
+        Hashes and provenance for the frozen inputs that determine the action.
     debate_result:
         Reserved for Stage 3; pass None (default).
     prev_cert_hash:
@@ -297,9 +304,11 @@ def build_and_sign_cert(
     """
     cert: dict[str, Any] = {
         "cert_id": uuid.uuid4().hex,
-        "version": "1",
+        "version": "2",
         "issued_at": issued_at,
         "config": config,
+        "artifact": artifact,
+        "evidence": evidence,
         "screen_results": screen_results,
         "debate_result": debate_result,
         "verdict": verdict,

@@ -30,6 +30,14 @@ _SCREEN_RESULTS = {
     "refusal_stability": {"score": 0.12, "band": "LOW"},
     "judge_agreement": {"kappa": 0.81, "band": "RELIABLE"},
 }
+_ARTIFACT = {
+    "scope": "huggingface-model-revision",
+    "repo_id": "example/model",
+    "revision": "a" * 40,
+}
+_EVIDENCE = {
+    "files": {"substrate/rtsi_table.csv": {"sha256": "b" * 64}},
+}
 
 
 def _make_cert(key: SigningKey | None = None) -> dict:
@@ -37,9 +45,11 @@ def _make_cert(key: SigningKey | None = None) -> dict:
     return build_and_sign_cert(
         config=_CONFIG,
         screen_results=_SCREEN_RESULTS,
-        verdict="PASS",
+        verdict="SCREEN_PASS",
         issued_at=_ISSUED_AT,
         key=k,
+        artifact=_ARTIFACT,
+        evidence=_EVIDENCE,
     )
 
 
@@ -217,6 +227,8 @@ _REQUIRED_FIELDS = {
     "version",
     "issued_at",
     "config",
+    "artifact",
+    "evidence",
     "screen_results",
     "debate_result",
     "verdict",
@@ -231,9 +243,9 @@ def test_build_and_sign_cert_has_all_schema_fields():
     assert _REQUIRED_FIELDS <= set(signed.keys())
 
 
-def test_build_and_sign_cert_version_is_1():
+def test_build_and_sign_cert_version_is_2():
     signed = _make_cert()
-    assert signed["version"] == "1"
+    assert signed["version"] == "2"
 
 
 def test_build_and_sign_cert_cert_id_is_hex():
@@ -262,6 +274,26 @@ def test_build_and_sign_cert_config_preserved():
     assert signed["config"] == _CONFIG
 
 
+def test_build_and_sign_cert_artifact_and_evidence_preserved():
+    signed = _make_cert()
+    assert signed["artifact"] == _ARTIFACT
+    assert signed["evidence"] == _EVIDENCE
+
+
+def test_tamper_artifact_revision_fails():
+    signed = _make_cert()
+    tampered = copy.deepcopy(signed)
+    tampered["artifact"]["revision"] = "c" * 40
+    assert verify_cert(tampered) is False
+
+
+def test_tamper_evidence_digest_fails():
+    signed = _make_cert()
+    tampered = copy.deepcopy(signed)
+    tampered["evidence"]["files"]["substrate/rtsi_table.csv"]["sha256"] = "d" * 64
+    assert verify_cert(tampered) is False
+
+
 def test_build_and_sign_cert_screen_results_preserved():
     signed = _make_cert()
     assert signed["screen_results"] == _SCREEN_RESULTS
@@ -269,7 +301,7 @@ def test_build_and_sign_cert_screen_results_preserved():
 
 def test_build_and_sign_cert_verdict_preserved():
     signed = _make_cert()
-    assert signed["verdict"] == "PASS"
+    assert signed["verdict"] == "SCREEN_PASS"
 
 
 # ---------------------------------------------------------------------------

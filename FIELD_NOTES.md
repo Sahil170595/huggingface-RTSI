@@ -14,7 +14,8 @@ The workflow then adds four checks around that score:
 
 1. A fine-tuned 149.6M-parameter ModernBERT classifier independently checks semantic refusal rates.
 2. Independent small safety judges measure whether the judge cohort itself agrees.
-3. An Ed25519 certificate binds the score, judge agreement, and route decision.
+3. An Ed25519 record binds the published artifact revision, frozen evidence
+   hashes, score, judge-cohort result, and release-gate action.
 4. A constitutional debate handles only genuinely contested cases rather than applying majority vote to foregone decisions.
 
 ## What worked
@@ -43,6 +44,13 @@ An end-to-end production run through the public Space completed two rounds acros
 
 Reproducibility also required more than pinning Python packages. Every model loader now pins an immutable Hugging Face repository commit, preventing an upstream `main` branch change from silently altering live behavior.
 
+The signed record follows the same rule. For the 11 published AWQ/GPTQ
+checkpoints, it binds the exact Hub revision plus SHA-256 hashes of the matrix,
+validation report, judge results, and scorer. Historical GGUF rows are labeled
+`legacy-config-only` because the original study did not retain immutable weight
+digests. A valid signature proves issuer identity and payload integrity; it
+does not prove broad model safety.
+
 The official challenge page states that total parameters must stay at or below
 32B. Running the tiny Qwen3Guard-Gen-0.6B guard is a deliberate small-model bet:
 paired with Granite Guardian it still reaches kappa 0.7484 (RELIABLE) and
@@ -62,6 +70,10 @@ For the UI, most visible spacing came from Gradio HTML's implicit padding and a 
 - The 45-cell matrix is small and uses 2024-generation checkpoints; the wide
   family-held-out AUC interval makes that uncertainty explicit.
 - A refusal-shape shift is a triage signal, not proof of harmful capability.
+- The thresholds are study-internal. Cross-stack and cross-model comparisons
+  need recalibration; the live two-checkpoint tab is therefore exploratory only.
+- The judge kappa is a cohort-level support metric, not a config-specific
+  judgment.
 - Probe-set sensitivity and model-family transfer need broader external validation.
 - Curated judge labels are not a substitute for an independently collected,
   blinded human benchmark.

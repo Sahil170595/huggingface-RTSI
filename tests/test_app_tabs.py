@@ -40,17 +40,18 @@ class TestScoreConfig:
         badge, rec = app.score_config("qwen2.5-1.5b", "GPTQ")
         assert "0.7864" in badge
         assert "HIGH" in badge
-        assert "ROUTE TO SAFE BASELINE" in rec
+        assert "ROUTE / RUN FULL SAFETY EVALUATION" in rec
 
     def test_phi2_gptq_pins_0_6199(self):
         badge, _rec = app.score_config("phi-2", "GPTQ")
         assert "0.6199" in badge
 
-    def test_low_cell_recommends_deploy(self):
+    def test_low_cell_is_explicitly_not_a_safety_certification(self):
         low = app.DF[app.DF["rtsi_risk"] == "LOW"].iloc[0]
         badge, rec = app.score_config(str(low["base_model"]), str(low["quant"]))
         assert "LOW" in badge
-        assert "DEPLOY" in rec
+        assert "SCREEN PASS" in rec
+        assert "NOT A SAFETY CERTIFICATION" in rec
 
     @pytest.mark.parametrize("model,quant", [
         ("phi-2", "AWQ"),
@@ -78,6 +79,12 @@ class TestIssueCertificate:
         cert, pretty, banner, cleared = app.issue_certificate("qwen2.5-1.5b", "GPTQ")
         assert isinstance(cert, dict)
         assert cert["verdict"] == "ROUTE"  # HIGH band -> ROUTE
+        assert cert["version"] == "2"
+        assert cert["artifact"]["repo_id"] == (
+            "Crusadersk/qwen2.5-1.5b-gptq-4bit"
+        )
+        assert len(cert["artifact"]["revision"]) == 40
+        assert cert["evidence"]["method"]["paper"].endswith("2606.10154")
         assert cert["pubkey_hex"] == app.SIGNING_KEY.pubkey_hex
         assert cert_signer.verify_cert(cert)
         assert "0.7864" in pretty
@@ -131,7 +138,7 @@ class TestVerifyDisplayedCert:
             k: v for k, v in cert.items()
             if k not in ("pubkey_hex", "signature_hex")
         }
-        stripped["verdict"] = "PASS"  # silently upgrade the verdict
+        stripped["verdict"] = "SCREEN_PASS"  # silently upgrade the action
         foreign = cert_signer.sign_cert(stripped, cert_signer.SigningKey.generate())
         assert cert_signer.verify_cert(foreign)  # self-consistent forgery
         out = app.verify_displayed_cert(foreign)
@@ -141,7 +148,7 @@ class TestVerifyDisplayedCert:
     def test_tampered_cert_fails_pinned_verify(self):
         cert, *_ = app.issue_certificate("qwen2.5-1.5b", "GPTQ")
         forged = json.loads(json.dumps(cert))
-        forged["verdict"] = "PASS"
+        forged["verdict"] = "SCREEN_PASS"
         assert "✗ INVALID" in app.verify_displayed_cert(forged)
 
 
@@ -151,7 +158,7 @@ class TestTamperTest:
         pretty, banner = app.tamper_test(cert)
         assert "✗ INVALID" in banner
         forged = json.loads(pretty)
-        assert forged["verdict"] == "PASS"  # ROUTE flipped to PASS
+        assert forged["verdict"] == "SCREEN_PASS"
         # The genuine cert in state is untouched and still verifies.
         assert cert["verdict"] == "ROUTE"
         assert "✓ VALID" in app.verify_displayed_cert(cert)
@@ -170,7 +177,7 @@ class TestForeignResignTest:
         assert "<b>True</b>" in banner   # bare verify_cert passes the forgery
         assert "<b>False</b>" in banner  # pinned verify rejects it
         forged = json.loads(pretty)
-        assert forged["verdict"] == "PASS"
+        assert forged["verdict"] == "SCREEN_PASS"
         assert forged["pubkey_hex"] != app.SIGNING_KEY.pubkey_hex
         assert cert_signer.verify_cert(forged)
         assert not cert_signer.verify_cert(
@@ -281,7 +288,8 @@ class TestRunLiveDegenerate:
         outs = self._drain(app.run_live("base-model", "cand-model", "cpu"))
         badge = outs[-1][0]
         assert "UNKNOWN" in badge
-        assert "INSUFFICIENT SIGNAL" in badge
+        assert "Exploratory only" in badge
+        assert "must not be used as a release verdict" in badge
         assert "Verdict override:" in badge
         assert "—" in badge  # score is meaningless; em-dash instead of 0.0xxx
 

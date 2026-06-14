@@ -8,7 +8,7 @@ sdk_version: 5.50.0
 app_file: app.py
 pinned: false
 license: apache-2.0
-short_description: Signed safety proofs for quantized small-model releases.
+short_description: Signed release-gate records for quantized small models.
 tags:
   - track:backyard
   - sponsor:openai
@@ -31,6 +31,11 @@ tags:
   - multi-agent
   - ed25519
   - cryptography
+  - attestation
+  - provenance
+  - model-supply-chain
+  - release-gating
+  - arxiv:2606.10154
   - modal
   - codex
 models:
@@ -49,29 +54,42 @@ models:
 
 # QuantSafe Certifier
 
-**QuantSafe issues a signed, portable, tamper-evident proof that a specific `(model, quant)` config was actually safety-evaluated.** Quantization can silently delete a model's refusals while every benchmark still looks fine — so the screen scores the refusal damage, routes the dangerous configs, and signs the decision with an Ed25519 certificate anyone can verify offline.
+**QuantSafe creates an artifact-bound, Ed25519-signed screening record for a published quantized model.** For the 11 published AWQ/GPTQ checkpoints in the measured matrix, record v2 signs the exact Hugging Face revision plus SHA-256 hashes of the frozen matrix, validation report, judge results, and scorer.
 
-**Who actually uses it.** The first user is me: I publish quantized small models that other people download and run. My profile ships 18 GPTQ/AWQ 4-bit quants — [`Crusadersk/phi-2-gptq-4bit`](https://huggingface.co/Crusadersk/phi-2-gptq-4bit), [`Crusadersk/qwen2.5-1.5b-gptq-4bit`](https://huggingface.co/Crusadersk/qwen2.5-1.5b-gptq-4bit), [`Crusadersk/mistral-7b-awq-4bit`](https://huggingface.co/Crusadersk/mistral-7b-awq-4bit), [`Crusadersk/llama3.2-3b-gptq-4bit`](https://huggingface.co/Crusadersk/llama3.2-3b-gptq-4bit), and more — and people genuinely pull them down ([`Crusadersk/tiny-gpt2`](https://huggingface.co/Crusadersk/tiny-gpt2) alone has 1,028 downloads). QuantSafe is the audit I run on my **own** catalog before I ship: it caught my `phi-2-gptq-4bit` quietly losing **90 percentage points of refusal**, and it flagged `qwen2.5-1.5b-gptq-4bit` as the single highest-risk config I publish. Now I screen every quant before it goes out the door.
+The signature proves issuer identity and payload integrity. It does **not** prove that a model is safe. RTSI is a study-internal triage signal that decides whether a configuration clears this screen, needs review, or must be routed to direct safety evaluation.
 
-It screens a model/quantization cell, routes risky configurations, cross-checks independent safety judges, issues an Ed25519-signed certificate, and escalates genuinely contested cases to a constitutional multi-model debate.
+**Research basis:** Sahil Kadadekar, [*Quality Is Not a Safety Proxy Under Quantization*](https://arxiv.org/abs/2606.10154), arXiv:2606.10154 (2026 preprint).
 
-[Open the live Space](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier) · [Watch the 69-second demo](demo/quantsafe-demo.webm) · [GitHub source](https://github.com/Sahil170595/huggingface-RTSI) · [Field notes](FIELD_NOTES.md)
+**Who uses it.** I publish 11 public GPTQ/AWQ 4-bit checkpoints. QuantSafe is the release gate I built for that catalog after a retrospective audit found that ordinary quality results could hide severe refusal damage.
+
+| Audited artifact | Immutable revision | Finding | Release-gate action |
+|---|---|---|---|
+| [`phi-2-gptq-4bit`](https://huggingface.co/Crusadersk/phi-2-gptq-4bit) | [`6385e88d733f…`](https://huggingface.co/Crusadersk/phi-2-gptq-4bit/tree/6385e88d733fe95b67dc6d18f264b83c6462e681) | RTSI `0.6199` (`HIGH`) | `ROUTE` |
+| [`qwen2.5-1.5b-gptq-4bit`](https://huggingface.co/Crusadersk/qwen2.5-1.5b-gptq-4bit) | [`4e1c7d4d78a3…`](https://huggingface.co/Crusadersk/qwen2.5-1.5b-gptq-4bit/tree/4e1c7d4d78a3fbb82742207baa7ac305bd836cb5) | RTSI `0.7864` (`HIGH`, matrix maximum) | `ROUTE` |
+
+[Open the Space](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier) · [Watch the 69-second demo](demo/quantsafe-demo.webm) · [Browse the public Space source](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier/tree/main) · [Read the paper](https://arxiv.org/abs/2606.10154) · [Field notes](FIELD_NOTES.md)
 
 **Built & audited in the open.** The full agent build/audit trace is published at [Crusadersk/quantsafe-agent-trace](https://huggingface.co/datasets/Crusadersk/quantsafe-agent-trace).
 
-## Verify a certificate
+## Verify a signed record
 
-Every certificate is signed with this Space's **pinned Ed25519 issuer key**:
+Every record is signed with this Space's **pinned Ed25519 issuer key**:
 
 ```text
 9a074a15598fef26f5fbd33e8d604cb6c2372989f164331c11018a83fcd98519
 ```
 
-"Verify" means something here: the **Foreign re-sign test** button in the Safety Certificate tab forges a cert — it flips the verdict and re-signs it with a *fresh* key. The forgery is internally self-consistent, so a naive signature check passes. The pinned check against the issuer key above still rejects it. That is the whole point of pinning: a tampered, re-signed certificate fails verification.
+Record v2 includes an immutable Hub revision for published AWQ/GPTQ artifacts and signed evidence hashes. Older GGUF cells are explicitly marked `legacy-config-only` because the original matrix did not retain immutable weight digests.
+
+The **Foreign re-sign test** modifies a record and signs it with a fresh key. Its signature is internally valid, but issuer-pinned verification still rejects it. The standalone verifier is documented in [`CERTIFICATE.md`](CERTIFICATE.md):
+
+```bash
+python scripts/verify_certificate.py certificate.json --evidence-root .
+```
 
 ## Why this matters
 
-`phi-2 + GPTQ` ([`Crusadersk/phi-2-gptq-4bit`](https://huggingface.co/Crusadersk/phi-2-gptq-4bit)) retained ordinary benchmark quality but lost **90 percentage points of refusal rate**. The screen scores that cell `0.6199` (`HIGH`) and routes it to a safe baseline. `qwen2.5-1.5b + GPTQ` ([`Crusadersk/qwen2.5-1.5b-gptq-4bit`](https://huggingface.co/Crusadersk/qwen2.5-1.5b-gptq-4bit)) is the highest-risk measured cell at `0.7864`.
+`phi-2 + GPTQ` retained ordinary benchmark quality while refusal deteriorated sharply. The raw refusal screen in the shipped substrate falls from **91% to 1% (-90 pp)**. The paper's independent judge-corrected refusal metric reports a **55.45 pp** loss. These are different measurement layers, and both route the artifact away from release. `qwen2.5-1.5b + GPTQ` is the highest-drift measured cell at `0.7864`.
 
 The screen uses four baseline-relative behavioral deltas:
 
@@ -86,7 +104,7 @@ The absolute deltas are normalized across the reference matrix and combined usin
 
 ## Validated results
 
-- **45 measured cells** across 6 models and 8 quantization formats
+- **51-row matched matrix**: 6 baselines plus **45 non-baseline cells**
 - **23 LOW / 13 MODERATE / 9 HIGH**
 - **ROC AUC 0.8445** under leave-one-cell-out validation
 - **ROC AUC 0.8403** under stricter leave-one-model-family-out validation, with a stratified-bootstrap 95% CI of **0.7080–0.9475**
@@ -102,9 +120,9 @@ These are screening results on a fixed reference matrix, not a claim that the sc
 ## Six-tab workflow
 
 1. **Score a config**: inspect any measured model/quantization cell, the risk heatmap, and the routing Pareto curve.
-2. **Live screen**: compare a baseline and candidate over a held-internal refusal probe set. The calibrated lexical score and fine-tuned semantic refusal rates are reported separately; only aggregates are shown.
+2. **Exploratory live probe**: compare two live small-model checkpoints over a held-internal probe set. This is explicitly out-of-domain for calibrated RTSI unless the pair is a matched baseline and quantized checkpoint.
 3. **Judge Agreement**: inspect agreement and curated-label accuracy for Qwen3Guard-Gen-0.6B and Granite Guardian 3.3 8B.
-4. **Safety Certificate**: sign the score, band, judge agreement, and route decision with Ed25519.
+4. **Signed Screening Record**: sign the artifact revision, evidence hashes, score, band, supporting judge-cohort result, and release-gate action with Ed25519.
 5. **Constitutional Debate**: replay or run a Modal-backed debate for contested MODERATE/MIXED cases.
 6. **About**: review the method, thresholds, calibration, and limitations.
 
@@ -117,7 +135,7 @@ Llama 3.2 1B repositories rather than deduplicating them, QuantSafe totals
 
 | Role | Runtime catalog |
 |---|---|
-| Live refusal screen | Qwen3-0.6B, Qwen3-1.7B, Qwen2.5-1.5B, Llama 3.2 1B (two repositories) |
+| Exploratory live probe | Qwen3-0.6B, Qwen3-1.7B, Qwen2.5-1.5B, Llama 3.2 1B (two repositories) |
 | Semantic refusal cross-check | QuantSafe Refusal ModernBERT (149.6M, fine-tuned from ModernBERT-base) |
 | Safety judges | Qwen3Guard-Gen-0.6B, Granite Guardian 3.3 8B |
 | Constitutional debate | Qwen3-8B, Phi-4-mini-instruct, SmolLM3-3B |
@@ -129,7 +147,7 @@ project's fixed 40-item corpus, replacing the 8B guard preserved an 85.0%
 accuracy result and a RELIABLE two-family agreement band while reducing the
 catalog by roughly 7.44B parameters.
 
-The live semantic cross-check is a project-specific fine-tune published at
+The exploratory semantic cross-check is a project-specific fine-tune published at
 [Crusadersk/quantsafe-refusal-modernbert](https://huggingface.co/Crusadersk/quantsafe-refusal-modernbert).
 It was trained on 37,934 balanced WildGuardMix prompt/response pairs and tested
 on 441 unambiguous XSTest GPT-4 responses. It remains a separate supporting
@@ -169,9 +187,10 @@ remains stable.
 ## Reproducibility and privacy
 
 - All local and Modal `from_pretrained` calls use audited 40-character commit revisions, including the fine-tuned classifier.
-- The 45-cell substrate and cached judge/debate outputs are versioned under `substrate/`.
+- The 51-row study comprises 6 baselines and 45 non-baseline cells; the signed screening substrate and cached judge/debate outputs are versioned under `substrate/`.
 - Probe prompts and raw live completions are never rendered in the UI.
-- Certificates are verified against this Space's pinned issuer public key (`9a074a15598fef26f5fbd33e8d604cb6c2372989f164331c11018a83fcd98519`); see [Verify a certificate](#verify-a-certificate) and the Foreign re-sign test.
+- Version 2 records bind published AWQ/GPTQ cells to immutable Hub revisions and sign the hashes of the matrix, validation report, judge results, and scorer.
+- Records are verified against this Space's pinned issuer public key (`9a074a15598fef26f5fbd33e8d604cb6c2372989f164331c11018a83fcd98519`); see [Verify a signed record](#verify-a-signed-record) and the Foreign re-sign test.
 - The private signing key and Modal bearer token live only in deployment secrets.
 
 ## Build Small submission status

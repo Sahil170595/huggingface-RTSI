@@ -8,15 +8,16 @@
 
 ---
 
-## 2. Five-Screen Tour (one line each)
+## 2. Six-Tab Tour (one line each)
 
 | Tab | What it shows | Headline number |
 |---|---|---|
 | **Score a config** | Static refusal-drift lookup across 45 measured (model, quant) cells — 23 LOW / 13 MODERATE / 9 HIGH | AUC 0.8445 |
-| **Live screen** | Runs small models live, computes the calibrated refusal-drift score, and independently checks semantic refusal rates with a fine-tuned ModernBERT | 97.73% external XSTest classifier accuracy |
+| **Exploratory live probe** | Compares two live small-model checkpoints and reports aggregate drift; it is explicitly outside the matched baseline/quant calibration | 97.73% external XSTest classifier accuracy |
 | **Judge Agreement** | Two independent safety classifiers label a 40-prompt corpus; agreement and curated-label accuracy are reported separately | kappa = 0.7484 (RELIABLE); 35/40 agree; unanimous decisions are 94.3% accurate |
-| **Safety Certificate** | Ed25519-signed certificate over the screen results — verdict (PASS / REVIEW / ROUTE) + kappa, verified against this Space's pinned issuer key; tamper test flips a field and the signature catches it | tamper-evident |
+| **Signed Screening Record** | Ed25519-signed record over artifact revision, evidence hashes, screen result, cohort-level kappa, and action (`SCREEN_PASS` / `REVIEW` / `ROUTE`), verified against the pinned issuer key | artifact-bound and tamper-evident |
 | **Constitutional Debate** | Small models argue "deploy or route" on MODERATE / MIXED configs under a constitution and reach consensus | cached example: 3 models -> CONDITIONAL at 0.67 agreement (genuine 2/3 majority) |
+| **About** | Defines the study-internal scope, validation, paper relationship, and limitations | arXiv:2606.10154 |
 
 ---
 
@@ -27,7 +28,7 @@
 | Role | Models | Size |
 |---|---|---|
 | Refusal substrate (Score a config) | qwen2.5-1.5b, phi-2, llama3.2-1b, llama3.2-3b, qwen2.5-7b, mistral-7b | <=7B |
-| Live screen | Qwen3-0.6B, Qwen3-1.7B, Qwen2.5-1.5B-Instruct, Llama-3.2-1B-Instruct (+ unsloth mirror) | <=2B |
+| Exploratory live probe | Qwen3-0.6B, Qwen3-1.7B, Qwen2.5-1.5B-Instruct, Llama-3.2-1B-Instruct (+ unsloth mirror) | <=2B |
 | Semantic refusal cross-check | Crusadersk/quantsafe-refusal-modernbert | 0.150B |
 | Safety judges (Judge Agreement) | Qwen3Guard-Gen-0.6B, Granite-Guardian-3.3-8b | 0.752B + 8.171B |
 | Debate models (Constitutional Debate) | Qwen3-8B, Phi-4-mini-instruct, SmolLM3-3B | <=8.2B |
@@ -46,7 +47,7 @@ measurement data and does not load its source checkpoints at runtime.
 
 - Final Space: `huggingface.co/spaces/build-small-hackathon/quantsafe-certifier`.
 - `requirements.txt` lists `gradio`, `numpy`, and all runtime deps.
-- Hardware tier: CPU Basic covers substrate lookup and the live CPU tab; authenticated Modal GPU endpoints power remote debate/judge inference.
+- Hardware tier: ZeroGPU hosts the Space; authenticated Modal GPU endpoints power remote debate/judge inference.
 
 ---
 
@@ -106,10 +107,10 @@ HF Spaces sleep after inactivity. Before recording the demo video:
 
 1. Open `https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier` in a browser.
 2. Wait for the status indicator to go green.
-3. On the Live screen tab: trigger one dummy run with the smallest model (Qwen3-0.6B) to load weights into memory and warm the cache.
+3. On the Exploratory live probe tab, use the remote backend for a short smoke run; do not present this cross-model result as a calibrated release decision.
 4. Then start recording — the first real run in the video reuses the cached weights.
 
-On CPU Basic the live screen runs each probe sequentially and shows per-probe progress; the first cold run (weight download + load) is the slow part, so warm it before recording and keep the default small model. Do not include the cold-start in the final cut.
+The exploratory tab runs each probe sequentially and shows per-probe progress. The first cold run is the slow part, so warm the selected backend before recording and do not include the cold-start in the final cut.
 
 ---
 

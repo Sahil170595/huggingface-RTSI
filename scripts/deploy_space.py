@@ -43,11 +43,17 @@ IGNORE = [
     "*.pem",
     ".playwright-mcp/*",
     ".playwright-cli/*",
+    ".history/*",
+    ".ruff_cache/*",
     "AGENT_TRACE.md",
     "social/*",
     "_applog.txt",
     "*.log",
-    "scripts/*",  # regen/deploy tooling is dev-only; the Space doesn't run it
+    "scripts/deploy_space.py",
+    "scripts/regen_debate.py",
+    "scripts/regen_judges.py",
+    "scripts/regen_validation.py",
+    "scripts/train_refusal_classifier.py",
 ]
 
 # Secrets to mirror into the Space when present in the local environment.
