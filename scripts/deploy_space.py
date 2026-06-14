@@ -45,6 +45,7 @@ IGNORE = [
     ".playwright-cli/*",
     ".history/*",
     ".ruff_cache/*",
+    "output/*",
     "AGENT_TRACE.md",
     "social/*",
     "_applog.txt",

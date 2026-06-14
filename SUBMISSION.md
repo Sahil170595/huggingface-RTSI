@@ -6,7 +6,7 @@
 ## 1. Required Submission Gates
 
 - [x] **Final public Space URL** — `https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier`
-- [x] **Demo video** — `demo/quantsafe-demo.webm` (48 s, 1280x720, hard-captioned)
+- [x] **Demo video** — `demo/quantsafe-demo.webm` (49.4 s, 1280x720, hard-captioned), with `demo/quantsafe-demo.mp4` for social upload
 - [x] **Official org** — `build-small-hackathon`
 - [ ] **Public social post** — publish it, then link its URL from `README.md`
 - [ ] **Field Guide submission** — run the official preflight and submit the final Space
