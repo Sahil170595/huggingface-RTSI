@@ -1,12 +1,12 @@
---extra-index-url https://download.pytorch.org/whl/cpu
 gradio==5.50.0  # pinned: 5.50.0 picks up the gradio 5.x security fixes while avoiding the 6.x tab-switch hang verified on 6.14.0 (only the default tab renders; others freeze on click)
+spaces==0.50.4  # ZeroGPU allocation decorator; injected by HF and pinned here for reproducibility
 pandas==2.3.3
 numpy==2.2.6  # latest NumPy supporting the ZeroGPU Python 3.10 image
 plotly==6.7.0
 scipy==1.15.3  # latest SciPy supporting Python 3.10
 transformers==4.57.6
-accelerate==1.13.0  # required by the cpu live-screen path: from_pretrained(device_map="cpu") needs accelerate; without it the live screen errors at model load
-torch==2.11.0  # the extra index above resolves this to the 2.11.0+cpu wheel on the linux Space; PEP 440 ignores local labels, so a Windows-local 2.11.0+cu128 install also satisfies the pin
+accelerate==1.13.0
+torch==2.11.0  # supported by ZeroGPU and preinstalled in the Space image
 huggingface_hub==0.36.2
 cryptography==46.0.7
 requests==2.33.1  # explicit: the modal backend imports it

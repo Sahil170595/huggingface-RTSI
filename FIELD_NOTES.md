@@ -35,6 +35,8 @@ The workflow then adds four checks around that score:
   0.154 on the same responses.
 - A three-model debate produced a strict 2/3 CONDITIONAL majority for the cached contested example.
 - Per-model Modal containers made remote debate turns naturally parallelizable.
+- A single ZeroGPU allocation now batches both live checkpoints across the full
+  exploratory probe set instead of queueing once per prompt.
 
 ## Engineering lessons
 

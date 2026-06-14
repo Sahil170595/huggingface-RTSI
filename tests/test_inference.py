@@ -286,7 +286,33 @@ class TestCpuCacheEviction:
 
 
 # ---------------------------------------------------------------------------
-# (d) public API contract
+# (d) ZeroGPU pair contract (GPU kernels mocked; no CUDA required)
+# ---------------------------------------------------------------------------
+
+def test_zerogpu_pair_runs_each_side_once(monkeypatch):
+    calls = []
+
+    def fake_gpu(model_id, prompts, max_new_tokens):
+        calls.append((model_id, list(prompts), max_new_tokens))
+        return [f"out-{model_id}"] * len(prompts), [3] * len(prompts)
+
+    monkeypatch.setattr(inference, "_infer_zerogpu", fake_gpu)
+    result = inference.infer_zerogpu_pair("base", "candidate", ["p1", "p2"], 42)
+
+    assert calls == [
+        ("base", ["p1", "p2"], 42),
+        ("candidate", ["p1", "p2"], 42),
+    ]
+    assert result == (
+        ["out-base", "out-base"],
+        [3, 3],
+        ["out-candidate", "out-candidate"],
+        [3, 3],
+    )
+
+
+# ---------------------------------------------------------------------------
+# (e) public API contract
 # ---------------------------------------------------------------------------
 
 class TestInferDispatch:

@@ -33,6 +33,18 @@ import plotly.graph_objects as go
 
 from features import live_rtsi, load_substrate_feature_rows
 
+try:
+    import spaces
+except ImportError:
+    class _LocalSpaces:
+        """No-op compatibility shim for local and test environments."""
+
+        @staticmethod
+        def GPU(*_args, **_kwargs):
+            return lambda function: function
+
+    spaces = _LocalSpaces()
+
 # ---------------------------------------------------------------------------
 # Paths + startup data load
 # ---------------------------------------------------------------------------
@@ -207,6 +219,24 @@ MODAL_TOKEN_ENV = "MODAL_TOKEN"
 # is enough to capture a refusal opening without minutes of extra decode time.
 LIVE_CPU_MAX_NEW_TOKENS = 48
 LIVE_MAX_NEW_TOKENS = 64  # hf/modal backends: remote decode, not CPU-bound here
+
+
+@spaces.GPU(duration=300)
+def run_zerogpu_pair(
+    baseline_model: str,
+    candidate_model: str,
+    probes: list[str],
+    max_new_tokens: int,
+):
+    """Hold one ZeroGPU allocation while both sides run all internal probes."""
+    from inference import infer_zerogpu_pair
+
+    return infer_zerogpu_pair(
+        baseline_model,
+        candidate_model,
+        probes,
+        max_new_tokens=max_new_tokens,
+    )
 
 # Headline operating point (validated): route the 9 HIGH cells.
 OP_ROUTED_PCT = 20.0
@@ -1332,6 +1362,11 @@ def run_live(baseline_model: str, candidate_model: str, backend: str):
             f"model load per side, then 2×{n} generations at a few tokens/s. "
             f"Progress is shown per probe."
         )
+    elif backend == "zerogpu":
+        eta_note = (
+            f"One ZeroGPU allocation batches both checkpoints across {n} probes "
+            f"each. A cold model download can take a couple of minutes."
+        )
     else:
         eta_note = (
             f"Remote backend — 2×{n} generations; a cold endpoint can take a "
@@ -1344,44 +1379,68 @@ def run_live(baseline_model: str, candidate_model: str, backend: str):
         "",
     )
 
-    try:
-        from inference import infer
-    except ImportError:
-        yield (
-            _msg("The exploratory probe needs <code>torch</code> + <code>transformers</code>, "
-                 "which aren't available here. The static <b>Score a config</b> tab works "
-                 "without them.", color="#7B2D26"),
-            _empty_delta_fig(), "",
-        )
-        return
-
     modal_hint = (
         " For <b>modal</b>, check the MODAL_ENDPOINT/MODAL_TOKEN secrets."
         if backend == "modal" else ""
     )
     try:
-        # One infer() call per probe so each finished generation yields a
-        # progress update (the cpu model cache makes per-probe calls cheap:
-        # both models stay resident after their first load).
-        runs: list[tuple[str, str, list[str], list[int]]] = [
-            ("baseline", baseline_model, [], []),
-            ("candidate", candidate_model, [], []),
-        ]
-        for side_idx, (side, model_id, completions, token_counts) in enumerate(runs):
-            for i, probe in enumerate(probes, start=1):
-                outs, counts = infer(model_id, [probe], backend=backend,
-                                     max_new_tokens=max_new)
-                completions.extend(outs)
-                token_counts.extend(counts)
-                yield (
-                    _msg(f"Screening on <b>{backend}</b>… <b>{side}</b> model: "
-                         f"probe <b>{i}/{n}</b> done "
-                         f"(pass {side_idx + 1} of 2).", color="#7B2D26"),
-                    gr.update(),
-                    "",
-                )
-        _, _, base_completions, base_tokens = runs[0]
-        _, _, cand_completions, cand_tokens = runs[1]
+        if backend == "zerogpu":
+            (
+                base_completions,
+                base_tokens,
+                cand_completions,
+                cand_tokens,
+            ) = run_zerogpu_pair(
+                baseline_model,
+                candidate_model,
+                probes,
+                max_new,
+            )
+            yield (
+                _msg(
+                    f"ZeroGPU generation complete: <b>2×{n}</b> probes. "
+                    "Computing aggregate drift and semantic cross-check…",
+                    color="#7B2D26",
+                ),
+                gr.update(),
+                "",
+            )
+        else:
+            try:
+                from inference import infer
+            except ImportError as exc:
+                raise ImportError(
+                    "torch and transformers are required for this backend"
+                ) from exc
+
+            # CPU and remote services expose per-probe progress. ZeroGPU uses
+            # one allocation above to avoid queueing once per probe.
+            runs: list[tuple[str, str, list[str], list[int]]] = [
+                ("baseline", baseline_model, [], []),
+                ("candidate", candidate_model, [], []),
+            ]
+            for side_idx, (side, model_id, completions, token_counts) in enumerate(runs):
+                for i, probe in enumerate(probes, start=1):
+                    outs, counts = infer(
+                        model_id,
+                        [probe],
+                        backend=backend,
+                        max_new_tokens=max_new,
+                    )
+                    completions.extend(outs)
+                    token_counts.extend(counts)
+                    yield (
+                        _msg(
+                            f"Screening on <b>{backend}</b>… <b>{side}</b> model: "
+                            f"probe <b>{i}/{n}</b> done "
+                            f"(pass {side_idx + 1} of 2).",
+                            color="#7B2D26",
+                        ),
+                        gr.update(),
+                        "",
+                    )
+            _, _, base_completions, base_tokens = runs[0]
+            _, _, cand_completions, cand_tokens = runs[1]
 
         # Scoring + rendering stay inside the guard: a failure here must yield
         # the styled message panel, never a raw gradio error toast.
@@ -1464,7 +1523,7 @@ def run_live(baseline_model: str, candidate_model: str, backend: str):
     except ImportError as exc:
         yield (
             _msg(f"Backend <b>{backend}</b> is missing a dependency: "
-                 f"{html.escape(str(exc))}. Try the default <b>cpu</b> backend.",
+                 f"{html.escape(str(exc))}. Try <b>modal</b> or <b>hf</b>.",
                  color="#7B2D26"),
             _empty_delta_fig(), "",
         )
@@ -1472,8 +1531,8 @@ def run_live(baseline_model: str, candidate_model: str, backend: str):
     except Exception as exc:  # noqa: BLE001 - surface any backend/model failure cleanly
         yield (
             _msg(f"Live run failed: {type(exc).__name__}: "
-                 f"{html.escape(str(exc))}. Smaller models or the <b>cpu</b> "
-                 f"backend are the safest path.{modal_hint}",
+                 f"{html.escape(str(exc))}. Try a smaller pair or another "
+                 f"backend.{modal_hint}",
                  color="#7B2D26"),
             _empty_delta_fig(), "",
         )
@@ -1852,11 +1911,14 @@ with gr.Blocks(
                         value=LIVE_MODELS[1],
                     )
             backend_radio = gr.Radio(
-                ["cpu", "hf", "modal"], value="cpu", label="Backend",
-                info=("cpu = free + robust (default) · "
+                ["zerogpu", "modal", "hf", "cpu"],
+                value="zerogpu" if RUNNING_ON_HF_SPACE else "cpu",
+                label="Backend",
+                info=("zerogpu = batched RTX Pro 6000 allocation (Space default) · "
                       "hf = Inference Providers chat_completion (needs HF_TOKEN secret) · "
                       "modal = GPU endpoint (needs MODAL_ENDPOINT + MODAL_TOKEN secrets; "
-                      "Bearer-token auth, cold start can take ~2 min)"),
+                      "Bearer-token auth, cold start can take ~2 min) · "
+                      "cpu = local fallback"),
             )
             live_btn = gr.Button("Run exploratory probe", variant="primary")
             live_badge = gr.HTML(padding=False)

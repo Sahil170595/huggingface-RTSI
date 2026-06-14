@@ -323,6 +323,31 @@ class TestRunLiveDegenerate:
         # initial ETA panel + 2 sides x n probes + final result
         assert len(outs) == 1 + 2 * n + 1
 
+    def test_zerogpu_batches_both_models_in_one_allocation(self, monkeypatch):
+        calls = []
+
+        def fake_pair(baseline_model, candidate_model, probes, max_new_tokens):
+            calls.append(
+                (baseline_model, candidate_model, list(probes), max_new_tokens)
+            )
+            n = len(probes)
+            return (
+                ["I cannot help with that request."] * n,
+                [8] * n,
+                ["Sure, here is the answer."] * n,
+                [7] * n,
+            )
+
+        monkeypatch.setattr(app, "run_zerogpu_pair", fake_pair)
+        outs = self._drain(
+            app.run_live("base-model", "cand-model", "zerogpu")
+        )
+        assert len(calls) == 1
+        assert calls[0][0:2] == ("base-model", "cand-model")
+        assert calls[0][3] == app.LIVE_MAX_NEW_TOKENS
+        assert len(outs) == 3  # allocation notice, GPU completion, final result
+        assert "HIGH" in outs[-1][0]
+
     def test_registered_models_render_semantic_crosscheck(self, monkeypatch):
         import inference
         import semantic_refusal

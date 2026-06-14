@@ -47,7 +47,7 @@ measurement data and does not load its source checkpoints at runtime.
 
 - Final Space: `huggingface.co/spaces/build-small-hackathon/quantsafe-certifier`.
 - `requirements.txt` lists `gradio`, `numpy`, and all runtime deps.
-- Hardware tier: ZeroGPU hosts the Space; authenticated Modal GPU endpoints power remote debate/judge inference.
+- Hardware tier: ZeroGPU powers the batched two-checkpoint exploratory probe; authenticated Modal GPU endpoints power remote debate/judge inference.
 
 ---
 

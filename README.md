@@ -139,7 +139,7 @@ Llama 3.2 1B repositories rather than deduplicating them, QuantSafe totals
 
 | Role | Runtime catalog |
 |---|---|
-| Exploratory live probe | Qwen3-0.6B, Qwen3-1.7B, Qwen2.5-1.5B, Llama 3.2 1B (two repositories) |
+| Exploratory live probe | Qwen3-0.6B, Qwen3-1.7B, Qwen2.5-1.5B, Llama 3.2 1B (two repositories), batched under one `@spaces.GPU` allocation |
 | Semantic refusal cross-check | QuantSafe Refusal ModernBERT (149.6M, fine-tuned from ModernBERT-base) |
 | Safety judges | Qwen3Guard-Gen-0.6B, Granite Guardian 3.3 8B |
 | Constitutional debate | Qwen3-8B, Phi-4-mini-instruct, SmolLM3-3B |
@@ -160,6 +160,12 @@ signal rather than silently changing the frozen RTSI calibration.
 ## Modal runtime
 
 Modal is part of the production runtime, not a placeholder. `modal_app.py` serves authenticated `/generate` and `/judge` endpoints on GPU-backed, per-model container pools. Within each debate round, the Space fans independent model calls out concurrently and restores deterministic model order before consensus.
+
+The exploratory probe uses the Space's ZeroGPU hardware directly. One
+`@spaces.GPU(duration=300)` call holds a single RTX Pro 6000 allocation while
+both selected checkpoints run the full internal probe batch; it does not
+re-enter the shared GPU queue for every prompt. Modal remains the separate,
+authenticated multi-model debate and judge backend.
 
 The endpoint requires `Authorization: Bearer $MODAL_TOKEN`; unknown models are rejected by an allowlist. Model downloads are pinned to immutable Hugging Face commit SHAs in `model_revisions.py`.
 

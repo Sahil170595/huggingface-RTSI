@@ -1,6 +1,7 @@
 """inference.py — backend-swappable text generation for the live refusal-drift tab.
 
-Three backends:
+Four backends:
+  "zerogpu" transformers AutoModelForCausalLM on a @spaces.GPU allocation
   "cpu"    transformers AutoModelForCausalLM on CPU (default, no ext deps at import time)
   "hf"     huggingface_hub InferenceClient.chat_completion (set HF_TOKEN for
            provider routing / rate limits)
@@ -36,6 +37,26 @@ MAX_CACHED_CPU_MODELS: int = 2
 
 _cpu_cache: dict[str, tuple] = {}  # model_id -> (tokenizer, model); insertion order == LRU order
 _cpu_cache_lock = threading.Lock()
+
+
+def _encode_prompt(tokenizer, model_id: str, prompt: str):
+    """Tokenize one instruct prompt without double-inserting special tokens."""
+    if getattr(tokenizer, "chat_template", None):
+        messages = [{"role": "user", "content": prompt}]
+        template_kwargs: dict = {}
+        mid = model_id.lower()
+        if "qwen3" in mid and "guard" not in mid:
+            template_kwargs["enable_thinking"] = False
+        if "smollm3" in mid:
+            messages = [{"role": "system", "content": "/no_think"}] + messages
+        return tokenizer.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            return_tensors="pt",
+            return_dict=True,
+            **template_kwargs,
+        )
+    return tokenizer(prompt, return_tensors="pt")
 
 
 def _load_cpu_model(model_id: str) -> tuple:
@@ -97,33 +118,7 @@ def _infer_cpu(
     completions: list[str] = []
     token_counts: list[int] = []
     for prompt in prompts:
-        # Apply chat template when available so instruct models behave correctly.
-        # Tokenize ONCE inside apply_chat_template: rendering to a string and
-        # re-tokenizing with add_special_tokens=True double-inserts BOS on
-        # Llama-3.2 / Mistral. return_dict=True also yields the attention_mask
-        # so generate() never has to guess padding.
-        if getattr(tok, "chat_template", None):
-            messages = [{"role": "user", "content": prompt}]
-            template_kwargs: dict = {}
-            mid = model_id.lower()
-            # Reasoning-mode suppression: at the live tab's small token budget
-            # a <think> preamble would consume the whole budget before any
-            # refusal text appears. Qwen3 exposes enable_thinking in its
-            # template; SmolLM3 reads a /no_think system flag. Templates that
-            # use neither ignore the extra context.
-            if "qwen3" in mid and "guard" not in mid:
-                template_kwargs["enable_thinking"] = False
-            if "smollm3" in mid:
-                messages = [{"role": "system", "content": "/no_think"}] + messages
-            enc = tok.apply_chat_template(
-                messages,
-                add_generation_prompt=True,
-                return_tensors="pt",
-                return_dict=True,
-                **template_kwargs,
-            )
-        else:
-            enc = tok(prompt, return_tensors="pt")
+        enc = _encode_prompt(tok, model_id, prompt)
         prompt_len = enc["input_ids"].shape[-1]
         with torch.no_grad():
             out_ids = mdl.generate(
@@ -138,6 +133,103 @@ def _infer_cpu(
         completions.append(text)
         token_counts.append(int(gen_ids.shape[-1]))
     return completions, token_counts
+
+
+# ---------------------------------------------------------------------------
+# ZeroGPU backend — called only from app.py's single @spaces.GPU allocation.
+# ---------------------------------------------------------------------------
+
+MAX_CACHED_GPU_MODELS: int = 2
+_gpu_cache: dict[str, tuple] = {}
+_gpu_cache_lock = threading.Lock()
+
+
+def _load_gpu_model(model_id: str) -> tuple:
+    """Load a pinned small model in fp16 on the active ZeroGPU CUDA device."""
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    revision = model_revision(model_id)
+    tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_id,
+        revision=revision,
+        torch_dtype=torch.float16,
+    ).to("cuda")
+    model.eval()
+    return tokenizer, model
+
+
+def _load_gpu(model_id: str) -> tuple:
+    """Return a bounded GPU model cache inside ZeroGPU's CUDA emulation."""
+    import gc
+    import torch
+
+    with _gpu_cache_lock:
+        if model_id in _gpu_cache:
+            _gpu_cache[model_id] = _gpu_cache.pop(model_id)
+            return _gpu_cache[model_id]
+        while len(_gpu_cache) >= MAX_CACHED_GPU_MODELS:
+            oldest_id = next(iter(_gpu_cache))
+            del _gpu_cache[oldest_id]
+            gc.collect()
+            torch.cuda.empty_cache()
+        bundle = _load_gpu_model(model_id)
+        _gpu_cache[model_id] = bundle
+        return bundle
+
+
+def _infer_zerogpu(
+    model_id: str,
+    prompts: list[str],
+    max_new_tokens: int,
+) -> tuple[list[str], list[int]]:
+    """Generate all probes while one real ZeroGPU allocation is held."""
+    import torch
+
+    tokenizer, model = _load_gpu(model_id)
+    completions: list[str] = []
+    token_counts: list[int] = []
+    for prompt in prompts:
+        encoded = {
+            key: value.to("cuda")
+            for key, value in _encode_prompt(tokenizer, model_id, prompt).items()
+        }
+        prompt_len = encoded["input_ids"].shape[-1]
+        with torch.inference_mode():
+            output_ids = model.generate(
+                **encoded,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+                pad_token_id=tokenizer.eos_token_id,
+            )
+        generated_ids = output_ids[0, prompt_len:]
+        completions.append(
+            tokenizer.decode(generated_ids.detach().cpu(), skip_special_tokens=True)
+        )
+        token_counts.append(int(generated_ids.shape[-1]))
+    return completions, token_counts
+
+
+def infer_zerogpu_pair(
+    baseline_model: str,
+    candidate_model: str,
+    prompts: list[str],
+    max_new_tokens: int = 64,
+) -> tuple[list[str], list[int], list[str], list[int]]:
+    """Run both sides under the caller's single @spaces.GPU allocation."""
+    base_completions, base_counts = _infer_zerogpu(
+        baseline_model, prompts, max_new_tokens
+    )
+    candidate_completions, candidate_counts = _infer_zerogpu(
+        candidate_model, prompts, max_new_tokens
+    )
+    return (
+        base_completions,
+        base_counts,
+        candidate_completions,
+        candidate_counts,
+    )
 
 
 # ---------------------------------------------------------------------------
