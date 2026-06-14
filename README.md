@@ -179,7 +179,7 @@ signal rather than silently changing the frozen RTSI calibration.
 Modal is part of the production runtime, not a placeholder. `modal_app.py` serves authenticated `/generate` and `/judge` endpoints on GPU-backed, per-model container pools. Within each debate round, the Space fans independent model calls out concurrently and restores deterministic model order before consensus.
 
 The exploratory probe uses the Space's ZeroGPU hardware directly. One
-`@spaces.GPU(duration=300)` call holds a single RTX Pro 6000 allocation while
+`@spaces.GPU(duration=180)` call holds a single RTX Pro 6000 allocation while
 both selected checkpoints run the full internal probe batch; it does not
 re-enter the shared GPU queue for every prompt. Modal remains the separate,
 authenticated multi-model debate and judge backend.

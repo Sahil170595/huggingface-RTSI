@@ -221,7 +221,7 @@ LIVE_CPU_MAX_NEW_TOKENS = 48
 LIVE_MAX_NEW_TOKENS = 64  # hf/modal backends: remote decode, not CPU-bound here
 
 
-@spaces.GPU(duration=300)
+@spaces.GPU(duration=180)
 def run_zerogpu_pair(
     baseline_model: str,
     candidate_model: str,
