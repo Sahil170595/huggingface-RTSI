@@ -23,6 +23,8 @@ if str(_SPACE) not in sys.path:
 
 import debate
 from debate import (
+    BAND_SHORT_CIRCUIT_DEPLOY,
+    BAND_SHORT_CIRCUIT_ROUTE,
     CONSENSUS_AGREEMENT_THRESHOLD,
     CONSTITUTION,
     DEFAULT_STANCE,
@@ -312,12 +314,13 @@ class TestRunDebateContract:
 
         # Top-level keys exactly per the contract.
         assert set(out.keys()) == {
-            "question", "models", "backend", "rounds", "consensus",
+            "question", "models", "backend", "band", "rounds", "consensus",
             "final_verdict", "elapsed_s",
         }
         assert out["question"] == "Deploy or route?"
         assert out["models"] == ["m1", "m2"]
         assert out["backend"] == "local"
+        assert out["band"] is None  # no band passed -> None
         assert isinstance(out["elapsed_s"], float)
         assert out["elapsed_s"] >= 0.0
 
@@ -328,18 +331,21 @@ class TestRunDebateContract:
         assert out["rounds"][1]["round"] == 2
         assert out["rounds"][1]["round_type"] == ROUND_CRITIQUE
 
-        # Each response has model/stance/text and a stance in the vocab.
+        # Each response has model/stance/text/errored and a stance in the vocab.
         for rnd in out["rounds"]:
             assert len(rnd["responses"]) == 2
             for resp in rnd["responses"]:
-                assert set(resp.keys()) == {"model", "stance", "text"}
+                assert set(resp.keys()) == {"model", "stance", "text", "errored"}
                 assert resp["stance"] in STANCES
+                assert resp["errored"] is False  # all successful in this script
 
         # Consensus over the FINAL round (both ROUTE) -> ROUTE, agreement 1.0.
         assert out["consensus"]["verdict"] == STANCE_ROUTE
         assert out["final_verdict"] == STANCE_ROUTE
         assert out["consensus"]["agreement"] == 1.0
         assert out["consensus"]["vote_breakdown"][STANCE_ROUTE] == 2
+        # Unanimous agreement is correctly classified.
+        assert out["consensus"]["consensus_kind"] == "unanimous"
 
     def test_consensus_uses_final_round_not_first(self, monkeypatch):
         # Round 1 leans DEPLOY; round 2 flips to ROUTE. Verdict must follow round 2.
@@ -382,6 +388,11 @@ class TestRunDebateContract:
         bad_resp = next(r for r in out["rounds"][0]["responses"] if r["model"] == "bad")
         assert bad_resp["stance"] == DEFAULT_STANCE
         assert "generation error" in bad_resp["text"]
+        # errored=True flags this as a substituted default, NOT a genuine vote.
+        assert bad_resp["errored"] is True
+        # The healthy model did NOT error.
+        good_resp = next(r for r in out["rounds"][0]["responses"] if r["model"] == "good")
+        assert good_resp["errored"] is False
         # The healthy model still voted ROUTE; consensus is well-formed.
         assert out["final_verdict"] in STANCES
 
@@ -485,6 +496,256 @@ class TestRunDebateOnEvent:
 
         out = run_debate("q", models=["m1"], rounds=1, on_event=_bad_cb)
         assert out["final_verdict"] in STANCES
+
+
+# ---------------------------------------------------------------------------
+# (c2) Band gate: LOW / HIGH short-circuits the full debate (no generation).
+# ---------------------------------------------------------------------------
+
+class TestBandGate:
+    """run_debate must skip generation entirely for clear LOW and HIGH bands."""
+
+    def test_low_band_short_circuits_to_deploy(self, monkeypatch):
+        # With band="LOW" run_debate must return without ever calling generate.
+        called = []
+
+        def _generate_should_not_run(*a, **kw):
+            called.append(True)
+            return "STANCE: ROUTE"
+
+        monkeypatch.setattr(debate, "generate", _generate_should_not_run)
+        out = run_debate("q", models=["m1"], rounds=2, band="LOW")
+
+        assert called == [], "generate() must not be called for band=LOW"
+        assert out["routed_by_band"] is True
+        assert out["final_verdict"] == STANCE_DEPLOY
+        assert out["band"] == "LOW"
+        assert "rounds" not in out  # short-circuit result has no rounds
+        assert "consensus" not in out  # no consensus computed
+
+    def test_high_band_short_circuits_to_route(self, monkeypatch):
+        called = []
+
+        def _generate_should_not_run(*a, **kw):
+            called.append(True)
+            return "STANCE: DEPLOY"
+
+        monkeypatch.setattr(debate, "generate", _generate_should_not_run)
+        out = run_debate("q", models=["m1"], rounds=2, band="HIGH")
+
+        assert called == [], "generate() must not be called for band=HIGH"
+        assert out["routed_by_band"] is True
+        assert out["final_verdict"] == STANCE_ROUTE
+        assert out["band"] == "HIGH"
+
+    def test_low_band_is_case_insensitive(self, monkeypatch):
+        monkeypatch.setattr(debate, "generate", lambda *a, **kw: "STANCE: ROUTE")
+        out = run_debate("q", models=["m1"], band="low")
+        assert out["routed_by_band"] is True
+        assert out["final_verdict"] == STANCE_DEPLOY
+        assert out["band"] == "LOW"  # normalized to upper
+
+    def test_high_band_is_case_insensitive(self, monkeypatch):
+        monkeypatch.setattr(debate, "generate", lambda *a, **kw: "STANCE: DEPLOY")
+        out = run_debate("q", models=["m1"], band="high")
+        assert out["routed_by_band"] is True
+        assert out["final_verdict"] == STANCE_ROUTE
+
+    def test_moderate_band_runs_full_debate(self, monkeypatch):
+        script = {("m1", 1): "STANCE: ROUTE"}
+        monkeypatch.setattr(debate, "generate", _make_fake_generate(script))
+        out = run_debate("q", models=["m1"], rounds=1, band="MODERATE")
+        # Full debate ran -> has rounds
+        assert "rounds" in out
+        assert out.get("routed_by_band") is not True
+        assert out["final_verdict"] == STANCE_ROUTE
+
+    def test_none_band_runs_full_debate(self, monkeypatch):
+        script = {("m1", 1): "STANCE: CONDITIONAL"}
+        monkeypatch.setattr(debate, "generate", _make_fake_generate(script))
+        out = run_debate("q", models=["m1"], rounds=1, band=None)
+        assert "rounds" in out
+        assert out.get("routed_by_band") is not True
+
+    def test_unknown_band_runs_full_debate(self, monkeypatch):
+        # An unrecognised band string must not short-circuit: treat as contested.
+        script = {("m1", 1): "STANCE: ROUTE"}
+        monkeypatch.setattr(debate, "generate", _make_fake_generate(script))
+        out = run_debate("q", models=["m1"], rounds=1, band="CUSTOM_BAND")
+        assert "rounds" in out
+
+    def test_band_short_circuit_constants_are_disjoint(self):
+        assert BAND_SHORT_CIRCUIT_DEPLOY.isdisjoint(BAND_SHORT_CIRCUIT_ROUTE)
+
+    def test_short_circuit_result_has_required_keys(self, monkeypatch):
+        monkeypatch.setattr(debate, "generate", lambda *a, **kw: "STANCE: ROUTE")
+        out = run_debate("q", models=["m1", "m2"], band="HIGH")
+        required = {"question", "models", "backend", "band", "routed_by_band",
+                    "final_verdict", "elapsed_s"}
+        assert required.issubset(out.keys())
+
+    def test_short_circuit_elapsed_is_float(self, monkeypatch):
+        monkeypatch.setattr(debate, "generate", lambda *a, **kw: "STANCE: ROUTE")
+        out = run_debate("q", models=["m1"], band="LOW")
+        assert isinstance(out["elapsed_s"], float)
+        assert out["elapsed_s"] >= 0.0
+
+
+# ---------------------------------------------------------------------------
+# (c3) Consensus kind: honest classification of unanimous/majority/tie-break.
+# ---------------------------------------------------------------------------
+
+class TestConsensusKind:
+    """compute_consensus must expose consensus_kind so callers can distinguish
+    a genuine majority from a forced safety-first tie-break."""
+
+    def test_unanimous_two_models(self):
+        final = [
+            {"model": "a", "stance": STANCE_ROUTE, "text": ""},
+            {"model": "b", "stance": STANCE_ROUTE, "text": ""},
+        ]
+        out = compute_consensus(final)
+        assert out["consensus_kind"] == "unanimous"
+
+    def test_unanimous_three_models(self):
+        final = [
+            {"model": "a", "stance": STANCE_CONDITIONAL, "text": ""},
+            {"model": "b", "stance": STANCE_CONDITIONAL, "text": ""},
+            {"model": "c", "stance": STANCE_CONDITIONAL, "text": ""},
+        ]
+        out = compute_consensus(final)
+        assert out["consensus_kind"] == "unanimous"
+
+    def test_two_thirds_majority_not_unanimous(self):
+        # 2 of 3 agree -> majority, not unanimous.
+        final = [
+            {"model": "a", "stance": STANCE_ROUTE, "text": ""},
+            {"model": "b", "stance": STANCE_ROUTE, "text": ""},
+            {"model": "c", "stance": STANCE_DEPLOY, "text": ""},
+        ]
+        out = compute_consensus(final)
+        assert out["consensus_kind"] == "majority"
+
+    def test_tie_break_two_models(self):
+        # 1-1 split: 50% agreement, below 2/3 bar -> tie-break.
+        final = [
+            {"model": "a", "stance": STANCE_DEPLOY, "text": ""},
+            {"model": "b", "stance": STANCE_ROUTE, "text": ""},
+        ]
+        out = compute_consensus(final)
+        assert out["agreement"] == 0.5
+        assert out["consensus_kind"] == "tie-break"
+
+    def test_tie_break_three_way_split(self):
+        # 1-1-1: 33% agreement -> tie-break.
+        final = [
+            {"model": "a", "stance": STANCE_DEPLOY, "text": ""},
+            {"model": "b", "stance": STANCE_ROUTE, "text": ""},
+            {"model": "c", "stance": STANCE_CONDITIONAL, "text": ""},
+        ]
+        out = compute_consensus(final)
+        assert out["agreement"] == pytest.approx(1 / 3)
+        assert out["consensus_kind"] == "tie-break"
+
+    def test_empty_round_is_tie_break(self):
+        out = compute_consensus([])
+        assert out["consensus_kind"] == "tie-break"
+
+    def test_consensus_kind_in_run_debate_result(self, monkeypatch):
+        # run_debate must surface consensus_kind from compute_consensus.
+        script = {
+            ("m1", 1): "STANCE: ROUTE",
+            ("m2", 1): "STANCE: DEPLOY",
+        }
+        monkeypatch.setattr(debate, "generate", _make_fake_generate(script))
+        out = run_debate("q", models=["m1", "m2"], rounds=1)
+        # 1-1 split -> tie-break.
+        assert out["consensus"]["consensus_kind"] == "tie-break"
+
+    def test_consensus_kind_unanimous_in_run_debate(self, monkeypatch):
+        script = {("m1", 1): "STANCE: ROUTE", ("m2", 1): "STANCE: ROUTE"}
+        monkeypatch.setattr(debate, "generate", _make_fake_generate(script))
+        out = run_debate("q", models=["m1", "m2"], rounds=1)
+        assert out["consensus"]["consensus_kind"] == "unanimous"
+
+    def test_consensus_event_carries_consensus_kind(self, monkeypatch):
+        script = {("m1", 1): "STANCE: ROUTE", ("m2", 1): "STANCE: ROUTE"}
+        monkeypatch.setattr(debate, "generate", _make_fake_generate(script))
+        events: list[dict] = []
+        run_debate("q", models=["m1", "m2"], rounds=1, on_event=events.append)
+        cons_ev = next(e for e in events if e["type"] == "consensus")
+        assert "consensus_kind" in cons_ev
+        assert cons_ev["consensus_kind"] == "unanimous"
+
+
+# ---------------------------------------------------------------------------
+# (c4) Errored stances: a generation failure must be marked, not silent.
+# ---------------------------------------------------------------------------
+
+class TestErroredStance:
+    """When generate() raises, the substituted DEFAULT_STANCE must carry
+    errored=True so it is never silently counted as a genuine CONDITIONAL vote."""
+
+    def test_errored_true_on_generation_failure(self, monkeypatch):
+        def _boom(model_id, prompt, backend="local", max_new_tokens=220):
+            raise RuntimeError("timeout")
+
+        monkeypatch.setattr(debate, "generate", _boom)
+        out = run_debate("q", models=["m1"], rounds=1)
+        resp = out["rounds"][0]["responses"][0]
+        assert resp["errored"] is True
+        assert resp["stance"] == DEFAULT_STANCE
+        assert "generation error" in resp["text"]
+
+    def test_errored_false_on_success(self, monkeypatch):
+        monkeypatch.setattr(debate, "generate", lambda *a, **kw: "STANCE: DEPLOY")
+        out = run_debate("q", models=["m1"], rounds=1)
+        resp = out["rounds"][0]["responses"][0]
+        assert resp["errored"] is False
+
+    def test_errored_partial_failure_mixed(self, monkeypatch):
+        # One model fails, one succeeds. Check both are correct.
+        def _selective(model_id, prompt, backend="local", max_new_tokens=220):
+            if model_id == "bad":
+                raise ValueError("CUDA OOM")
+            return "STANCE: ROUTE"
+
+        monkeypatch.setattr(debate, "generate", _selective)
+        out = run_debate("q", models=["bad", "good"], rounds=1)
+        responses = {r["model"]: r for r in out["rounds"][0]["responses"]}
+        assert responses["bad"]["errored"] is True
+        assert responses["good"]["errored"] is False
+
+    def test_errored_event_carries_flag(self, monkeypatch):
+        # The on_event model_response event must also carry errored.
+        def _boom(model_id, prompt, backend="local", max_new_tokens=220):
+            raise RuntimeError("endpoint down")
+
+        monkeypatch.setattr(debate, "generate", _boom)
+        events: list[dict] = []
+        run_debate("q", models=["m1"], rounds=1, on_event=events.append)
+        mr_events = [e for e in events if e["type"] == "model_response"]
+        assert len(mr_events) == 1
+        assert mr_events[0]["errored"] is True
+
+    def test_errored_success_event_flag_is_false(self, monkeypatch):
+        monkeypatch.setattr(debate, "generate", lambda *a, **kw: "STANCE: ROUTE")
+        events: list[dict] = []
+        run_debate("q", models=["m1"], rounds=1, on_event=events.append)
+        mr_events = [e for e in events if e["type"] == "model_response"]
+        assert all(e["errored"] is False for e in mr_events)
+
+    def test_all_errored_still_has_valid_consensus(self, monkeypatch):
+        # Even if every model errors, the result is a valid dict (all DEFAULT_STANCE).
+        def _all_fail(model_id, prompt, backend="local", max_new_tokens=220):
+            raise RuntimeError("gpu gone")
+
+        monkeypatch.setattr(debate, "generate", _all_fail)
+        out = run_debate("q", models=["m1", "m2"], rounds=1)
+        assert out["final_verdict"] in STANCES
+        # Every response is errored.
+        for resp in out["rounds"][0]["responses"]:
+            assert resp["errored"] is True
 
 
 # ---------------------------------------------------------------------------

@@ -331,3 +331,20 @@ private reasoning.
 
 OpenAI Codex performed this evidence-hardening pass in collaboration with the
 repository owner.
+
+---
+
+# Final Adversarial-Hardening + External-Validation Pass
+
+June 15, 2026.
+
+- Multi-agent adversarial audit (baseline 74/100) re-verified on the main thread before acceptance.
+- Floor integrity/compliance fixes: validation reframing to lead with the 0.8403 family-held-out AUC (primary generalization claim) + explicit in-sample==LOOCV disclosure; project-label qualifiers added throughout; demo-duration corrected to 35.7 s; personal-path and internal-codename strings scrubbed from substrate JSONs; deploy ignore-list leak closed.
+- Real debate band-gating enforced in code (clear HIGH configs route without consuming an agent round).
+- External-labeled judge benchmark added: PKU-Alignment/BeaverTails 30k_test, N=400, seed 20260615, third-party human crowd labels; Qwen3Guard-Gen-0.6B 84.0% [80.1–87.3] F1 0.854 cov 96.8%; Granite-Guardian-3.3-8B 84.75% [80.9–87.9] F1 0.847 cov 100%; Nemotron-Safety-Guard-8B-v3 81.0% [76.9–84.5] F1 0.808 cov 100%; unanimous 89.76% [86.0–92.6] at 83% coverage; results in `substrate/external_judge_eval.json`.
+- Prospective NF4 transfer demonstration added: frozen 45-cell substrate scored blind against two new families under NF4 4-bit (bitsandbytes) on-the-fly quant, 100 AdvBench probes; Falcon3-3B-Instruct (TII) RTSI 0.0018 LOW, no material loss; SmolLM2-1.7B-Instruct (HuggingFaceTB) RTSI 0.2408 MODERATE, −10 pp refusal-rate drop, material_loss True; results in `substrate/prospective_validation.json`.
+- MiniCPM4.1-8B transformers incompatibility documented: trust_remote_code imports is_torch_fx_available removed in pinned transformers 5.12.0; excluded from live results rather than downgrading the pinned runtime.
+- CI smoke job added: installs full pinned requirements.txt (CPU torch) and imports entire runtime stack; a transformers/torch API break at the pinned versions now fails CI.
+- UI evidence wiring: Cross-Vendor benchmark panel and Prospective transfer panel added to the Judge Agreement tab; judges' TL;DR panel added for at-a-glance summary.
+
+Owner + Claude + OpenAI Codex, collaborative pass.

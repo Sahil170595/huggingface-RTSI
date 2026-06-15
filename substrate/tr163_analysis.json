@@ -1,6 +1,6 @@
 {
-  "experiment": "tr163_rtsi_gated_dtype_routing",
-  "run_dir": "C:\\Users\\sahil\\OneDrive\\Documents\\GitHub\\Banterhearts\\research\\tr163\\results\\20260523_011918",
+  "experiment": "rtsi_refusal_drift_routing",
+  "run_dir": "results/20260523_011918",
   "n_cells": 45,
   "risk_distribution": {
     "LOW": 23,

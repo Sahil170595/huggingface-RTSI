@@ -1,0 +1,115 @@
+{
+  "dataset": "PKU-Alignment/BeaverTails",
+  "split": "30k_test",
+  "sample_size": 400,
+  "seed": 20260615,
+  "label_source": "BeaverTails human crowd labels",
+  "per_judge": [
+    {
+      "model": "Qwen/Qwen3Guard-Gen-0.6B",
+      "family": "qwen3guard",
+      "metrics": {
+        "n_items": 400,
+        "n_correct": 336,
+        "accuracy": 0.84,
+        "accuracy_ci_low": 0.8008643954521164,
+        "accuracy_ci_high": 0.8726672444005619,
+        "macro_f1": 0.853907259106174,
+        "coverage": 0.9675,
+        "per_class": {
+          "safe": {
+            "precision": 0.8802083333333334,
+            "recall": 0.845,
+            "f1": 0.8622448979591837,
+            "support": 200
+          },
+          "unsafe": {
+            "precision": 0.8564102564102564,
+            "recall": 0.835,
+            "f1": 0.8455696202531644,
+            "support": 200
+          }
+        }
+      },
+      "counts": {
+        "safe": 192,
+        "unsafe": 195,
+        "unclear": 13
+      }
+    },
+    {
+      "model": "ibm-granite/granite-guardian-3.3-8b",
+      "family": "granite-guardian",
+      "metrics": {
+        "n_items": 400,
+        "n_correct": 339,
+        "accuracy": 0.8475,
+        "accuracy_ci_low": 0.8089761434535727,
+        "accuracy_ci_high": 0.8794128119840912,
+        "macro_f1": 0.8473845845920978,
+        "coverage": 1.0,
+        "per_class": {
+          "safe": {
+            "precision": 0.8293838862559242,
+            "recall": 0.875,
+            "f1": 0.8515815085158152,
+            "support": 200
+          },
+          "unsafe": {
+            "precision": 0.8677248677248677,
+            "recall": 0.82,
+            "f1": 0.8431876606683804,
+            "support": 200
+          }
+        }
+      },
+      "counts": {
+        "safe": 211,
+        "unsafe": 189,
+        "unclear": 0
+      }
+    },
+    {
+      "model": "nvidia/Llama-3.1-Nemotron-Safety-Guard-8B-v3",
+      "family": "nemotron-safety-guard",
+      "metrics": {
+        "n_items": 400,
+        "n_correct": 324,
+        "accuracy": 0.81,
+        "accuracy_ci_low": 0.7686762283551013,
+        "accuracy_ci_high": 0.845426149157635,
+        "macro_f1": 0.8084484323016432,
+        "coverage": 1.0,
+        "per_class": {
+          "safe": {
+            "precision": 0.7627118644067796,
+            "recall": 0.9,
+            "f1": 0.8256880733944953,
+            "support": 200
+          },
+          "unsafe": {
+            "precision": 0.8780487804878049,
+            "recall": 0.72,
+            "f1": 0.7912087912087912,
+            "support": 200
+          }
+        }
+      },
+      "counts": {
+        "safe": 236,
+        "unsafe": 164,
+        "unclear": 0
+      }
+    }
+  ],
+  "cohort_selective": {
+    "n_items": 400,
+    "n_covered": 332,
+    "n_correct": 298,
+    "coverage": 0.83,
+    "accuracy": 0.8975903614457831,
+    "accuracy_ci_low": 0.8602994566259493,
+    "accuracy_ci_high": 0.9257857424052688
+  },
+  "generated_at": "2026-06-15T08:35:08Z"
+}

@@ -46,6 +46,11 @@ IGNORE = [
     ".history/*",
     ".ruff_cache/*",
     "output/*",
+    "scripts/_prospective_cache/*",  # raw model completions to harmful probes — never publish
+    # SECURITY: internal competitive-strategy docs — never publish to the Space.
+    # (AGENT_TRACE.md is intentionally NOT excluded — it is a "built in the open" deliverable.)
+    "HACKATHON_BRIEF.md",
+    "HACKATHON_ORG_PAGE.md",
     # The org token can commit source but cannot negotiate LFS uploads. Demo
     # media is uploaded separately through the authenticated Hugging Face UI.
     "demo/*.mp4",
@@ -60,6 +65,10 @@ IGNORE = [
     "scripts/train_refusal_classifier.py",
     "scripts/publish_judge_benchmark.py",
     "scripts/publish_release_warnings.py",
+    # research/eval scripts — not part of the running Space app
+    "scripts/eval_external_judges.py",
+    "scripts/prospective_modal.py",
+    "scripts/prospective_score.py",
 ]
 
 # Secrets to mirror into the Space when present in the local environment.

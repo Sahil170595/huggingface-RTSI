@@ -75,7 +75,7 @@ proof that those exact weights generated the historical measurement.
 | [`phi-2-gptq-4bit`](https://huggingface.co/Crusadersk/phi-2-gptq-4bit) | [`6385e88d733f…`](https://huggingface.co/Crusadersk/phi-2-gptq-4bit/tree/6385e88d733fe95b67dc6d18f264b83c6462e681) | RTSI `0.6199` (`HIGH`) | `ROUTE` |
 | [`qwen2.5-1.5b-gptq-4bit`](https://huggingface.co/Crusadersk/qwen2.5-1.5b-gptq-4bit) | [`4e1c7d4d78a3…`](https://huggingface.co/Crusadersk/qwen2.5-1.5b-gptq-4bit/tree/4e1c7d4d78a3fbb82742207baa7ac305bd836cb5) | RTSI `0.7864` (`HIGH`, matrix maximum) | `ROUTE` |
 
-[Open the Space](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier) · [Watch the 49-second judge demo](demo/quantsafe-demo.webm) · [Download the social-ready MP4](demo/quantsafe-demo.mp4) · [Browse the GitHub source](https://github.com/Sahil170595/huggingface-RTSI) · [Browse the Space source](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier/tree/main) · [Read the paper](https://arxiv.org/abs/2606.10154) · [Field notes](FIELD_NOTES.md) · [Judge benchmark dataset](https://huggingface.co/datasets/Crusadersk/quantsafe-judge-benchmark) · [Adversarial audit](SECURITY_AUDIT.md)
+[Open the Space](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier) · [Watch the 36-second judge demo](demo/quantsafe-demo.webm) · [Download the social-ready MP4](demo/quantsafe-demo.mp4) · [Browse the GitHub source](https://github.com/Sahil170595/huggingface-RTSI) · [Browse the Space source](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier/tree/main) · [Read the paper](https://arxiv.org/abs/2606.10154) · [Field notes](FIELD_NOTES.md) · [Judge benchmark dataset](https://huggingface.co/datasets/Crusadersk/quantsafe-judge-benchmark) · [Adversarial audit](SECURITY_AUDIT.md)
 
 **Built & audited in the open.** The full agent build/audit trace is published at [Crusadersk/quantsafe-agent-trace](https://huggingface.co/datasets/Crusadersk/quantsafe-agent-trace).
 
@@ -108,7 +108,7 @@ python scripts/verify_certificate.py certificate.json --evidence-root .
 
 ## Why this matters
 
-`phi-2 + GPTQ` retained ordinary benchmark quality while refusal deteriorated sharply. The raw refusal screen in the shipped substrate falls from **91% to 1% (-90 pp)**. The paper's independent judge-corrected refusal metric reports a **55.45 pp** loss. These are different measurement layers, and both route the artifact away from release. `qwen2.5-1.5b + GPTQ` is the highest-drift measured cell at `0.7864`.
+`phi-2 + GPTQ` retained ordinary benchmark quality while refusal deteriorated sharply. The raw refusal screen in the shipped substrate falls from **91% to 1% (-90 pp)**. The paper separately reports a **55.45 pp** judged-refusal loss for the same cell. These are different measurement layers, and both route the artifact away from release. `qwen2.5-1.5b + GPTQ` is the highest-drift measured cell at `0.7864`.
 
 The screen uses four baseline-relative behavioral deltas:
 
@@ -125,17 +125,22 @@ The absolute deltas are normalized across the reference matrix and combined usin
 
 - **51-row matched matrix**: 6 baselines plus **45 non-baseline cells**
 - **23 LOW / 13 MODERATE / 9 HIGH**
-- **ROC AUC 0.8445** under leave-one-cell-out validation
-- **ROC AUC 0.8403** under stricter leave-one-model-family-out validation, with a stratified-bootstrap 95% CI of **0.7080–0.9475**
-- Routing the 9 HIGH cells routes **20%** of configurations and recovers **76.17%** of the measured refusal-rate gap
+- **ROC AUC 0.8403** under stricter leave-one-model-family-out validation — the primary generalization claim — with a stratified-bootstrap 95% CI of **0.7080–0.9475**
+- **ROC AUC 0.8445** under leave-one-cell-out validation, numerically identical to the in-sample AUC: at n=45 the per-fold weight refits do not reorder cells across the decision boundary, so leave-one-cell-out cannot show shrinkage here (see the `circularity_note` in `tr163_analysis.json`). We therefore lead with the family-held-out figure.
+- Routing the HIGH band recovers **76.17%** of the measured refusal-rate gap in-sample (**20%**, 9/45) and **76.37%** under leave-one-cell-out (**22%**, 10/45)
 - Three safety judge models from distinct model families agree unanimously on **34/40** cases, Fleiss' kappa **0.7929 (`RELIABLE`)**; its zone-stratified bootstrap 95% CI is **0.6641–0.9239**, which crosses the 0.70 band threshold
 - Qwen3Guard-Gen-0.6B reaches **85.0%** project-label accuracy, Granite Guardian **92.5%**, and NVIDIA Llama-3.1-Nemotron-Safety-Guard-8B-v3 **95.0%**, the highest point estimate on this 40-item project-labeled corpus; the exact paired comparison with Granite is **McNemar p=1.0**
-- Unanimous non-unclear judge decisions cover **85%** of the corpus and are **97.1%** accurate
+- Unanimous non-unclear judge decisions cover **85%** of the corpus and are **97.1%** accurate against the project-curated labels
 - The corpus, all three judges' verdicts, and this comparison are published as an open, citable benchmark: [`Crusadersk/quantsafe-judge-benchmark`](https://huggingface.co/datasets/Crusadersk/quantsafe-judge-benchmark)
-- The fine-tuned 149.6M-parameter semantic refusal cross-check reaches **97.73% accuracy / 0.976 refusal F1** on 441 held-out XSTest responses, versus **52.61% / 0.154** for the legacy opener lexicon
+- **External-labeled judge benchmark** (PKU-Alignment/BeaverTails 30k_test, N=400, seed 20260615, third-party human crowd labels): Qwen3Guard-Gen-0.6B 84.0% accuracy [80.1–87.3], macro-F1 0.854, coverage 96.8%; Granite-Guardian-3.3-8B 84.75% [80.9–87.9], macro-F1 0.847, coverage 100%; Nemotron-Safety-Guard-8B-v3 81.0% [76.9–84.5], macro-F1 0.808, coverage 100%; three-guard unanimous (selective consensus) 89.76% [86.0–92.6] at 83% coverage. These accuracies are measured against external third-party human labels (BeaverTails), not the project's own 40-item corpus, directly addressing the label-circularity limitation. On this benchmark the 0.6B Qwen3Guard matches the 8B Granite Guardian and exceeds the 8B Nemotron guard, supporting the small-model design.
+- The fine-tuned 149.6M-parameter semantic refusal cross-check reaches **97.73% accuracy / 0.976 refusal F1** on 441 held-out XSTest responses, versus **52.61% / 0.154** for the legacy 13-opener lexicon — which is the small-model refusal-shape feature extractor applied out-of-domain to GPT-4 text, so this gap reflects domain mismatch as much as fine-tuning gain
 - Cached three-model debate reaches **CONDITIONAL** at **0.67 agreement**, a genuine 2/3 majority
 
 These are screening results on a fixed reference matrix, not a claim that the screen replaces a full safety evaluation. A HIGH result explicitly routes to the expensive safety path.
+
+**Prospective transfer demonstration** (NF4 4-bit, bitsandbytes; frozen 45-cell substrate; 100 AdvBench probes; scored one cell at a time): Falcon3-3B-Instruct (TII) RTSI 0.0018, LOW, refusal_rate_delta +0.02, material_loss False; SmolLM2-1.7B-Instruct (HuggingFaceTB) RTSI 0.2408, MODERATE, refusal_rate_delta −0.10, material_loss True. As a prospective out-of-distribution check (a demonstration, not a powered AUC: n=2 cells), the frozen screen was applied blind to two families absent from the 45-cell matrix and to a quantization method (NF4) it was never calibrated on. It correctly cleared Falcon3-3B (no refusal loss, LOW) and flagged SmolLM2-1.7B (a measured 10-point refusal-rate drop, MODERATE / material-loss). The RTSI screen scores baseline-relative refusal-shape drift and is quantization-method-agnostic by construction.
+
+**MiniCPM compatibility note:** OpenBMB MiniCPM4.1-8B was also evaluated as a fourth (reasoning-model) judge and a prospective subject; its trust_remote_code modeling code (pinned revision) imports is_torch_fx_available, which is removed in the pinned transformers 5.12.0, so it fails to load under this stack. We document this incompatibility rather than downgrade the pinned runtime, and exclude MiniCPM from the live results.
 
 ## Llama Champion evidence
 
@@ -264,7 +269,7 @@ remains stable.
 |---|---|
 | Public Gradio Space | Live |
 | Demo storyboard | Ready in [`demo/STORYBOARD.md`](demo/STORYBOARD.md) |
-| Public demo video | [`demo/quantsafe-demo.webm`](demo/quantsafe-demo.webm), 49.4 seconds, hard-captioned; [MP4](demo/quantsafe-demo.mp4) for social upload |
+| Public demo video | [`demo/quantsafe-demo.webm`](demo/quantsafe-demo.webm), 35.7 seconds, hard-captioned; [MP4](demo/quantsafe-demo.mp4) for social upload |
 | Official hackathon organization | Complete: `build-small-hackathon` |
 
 ## Local verification

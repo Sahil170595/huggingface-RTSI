@@ -27,7 +27,7 @@ and the live Hugging Face Space.
 
 ## Verification
 
-- 348 unit tests pass under Gradio 6.18.0 and Transformers 5.12.0.
+- The full suite (460 tests collected) passes under Gradio 6.18.0 and Transformers 5.12.0. A smoke-runtime CI job now installs the full pinned requirements.txt (CPU torch) and imports the entire runtime stack, so a transformers/torch API break at the pinned versions fails CI.
 - `ruff check .` and `git diff --check` pass.
 - Bandit reports no medium- or high-severity findings.
 - Every public model revision and documentation link resolves.

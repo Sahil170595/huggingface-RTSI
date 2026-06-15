@@ -22,3 +22,4 @@ HACKATHON_BRIEF.md
 .history/
 .ruff_cache/
 output/
+scripts/_prospective_cache/

@@ -6,7 +6,7 @@
 ## 1. Required Submission Gates
 
 - [x] **Final public Space URL** — `https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier`
-- [x] **Demo video** — `demo/quantsafe-demo.webm` (49.4 s, 1280x720, hard-captioned), with `demo/quantsafe-demo.mp4` for social upload
+- [x] **Demo video** — `demo/quantsafe-demo.webm` (35.7 s, 1280x720, hard-captioned), with `demo/quantsafe-demo.mp4` for social upload
 - [x] **Official org** — `build-small-hackathon`
 - [ ] **Public social post** — publish it, then link its URL from `README.md`
 - [ ] **Field Guide submission** — run the official preflight and submit the final Space
@@ -19,7 +19,7 @@
 |---|---|---|
 | **Score a config** | Static refusal-drift lookup across 45 measured (model, quant) cells — 23 LOW / 13 MODERATE / 9 HIGH | AUC 0.8445 |
 | **Exploratory live probe** | Selects a pair from four live checkpoint options and reports aggregate drift; it is explicitly outside the matched baseline/quant calibration | 97.73% external XSTest classifier accuracy |
-| **Judge Agreement** | Three safety judge models from distinct model families label a fixed 40-prompt corpus; agreement, uncertainty, and project-label accuracy are reported separately | Fleiss' kappa = 0.7929 (95% bootstrap CI 0.6641–0.9239); 34/40 unanimous; unanimous decisions are 97.1% accurate |
+| **Judge Agreement** | Three safety judge models from distinct model families label a fixed 40-prompt corpus; agreement, uncertainty, and project-label accuracy are reported separately | Fleiss' kappa = 0.7929 (95% bootstrap CI 0.6641–0.9239); 34/40 unanimous; unanimous decisions are 97.1% accurate against the project labels; **external-labeled benchmark** (BeaverTails N=400, third-party human crowd labels): Qwen3Guard 84.0%, Granite Guardian 84.75%, Nemotron 81.0%; unanimous 89.76% at 83% coverage |
 | **Signed Screening Record** | Tamper-evident Ed25519 release-screen record over a publisher-linked release revision, content-addressed evidence, screen result, cohort-level benchmark result, and action (`SCREEN_PASS` / `REVIEW` / `ROUTE`) | release-target-bound; not proof of model safety or a config-specific judge evaluation |
 | **Constitutional Debate** | Small models argue "deploy or route" on MODERATE / MIXED configs under a constitution and reach consensus | cached example: 3 models -> CONDITIONAL at 0.67 agreement (genuine 2/3 majority) |
 | **About** | Defines the study-internal scope, validation, paper relationship, and limitations | arXiv:2606.10154 |
@@ -89,7 +89,7 @@ measurement data and does not load its source checkpoints at runtime.
 Run from the repo root. Must return zero matches before submitting:
 
 ```bash
-grep -rniE "neurips|iclr|icml|openreview|submission #|under review|blind review" . \
+grep -rniE "neurips|iclr|icml|openreview|submission #|under review|blind review|banterhearts|tr134" . \
   --exclude=rtsi_core.py \
   --exclude=SUBMISSION.md \
   --exclude-dir=.git \
@@ -99,6 +99,8 @@ grep -rniE "neurips|iclr|icml|openreview|submission #|under review|blind review"
 ```
 
 Expected output: _(empty)_ — zero matches. `SUBMISSION.md` is excluded because this section's own command text would otherwise match itself; `.git` is excluded because packed history objects retain old text and are never served by the Space.
+
+Note: the grep now also covers `substrate/*.json`. A path leak was found and scrubbed from the substrate JSON artifacts; re-run the exposure grep including those files to confirm zero matches.
 
 Note: `rtsi_core.py` is the vendored internal scorer — excluded as a known internal residual; its symbol names are not user-facing and do not appear in any UI tab.
 
@@ -158,8 +160,8 @@ cold-download wait from the final video.
 | Risk split | 23 LOW / 13 MODERATE / 9 HIGH | tr163_analysis.json |
 | ROC AUC (leave-one-cell-out) | 0.8445 | tr163_analysis.json |
 | ROC AUC (leave-one-model-family-out) | 0.8403 (95% bootstrap CI 0.7080–0.9475) | validation_report.json |
-| Fraction of configs routed (HIGH band) | 20% (9/45) | tr163_analysis.json -> in_sample.high_band |
-| Refusal-rate gap recovered (HIGH band) | 76.17% | tr163_analysis.json -> in_sample.high_band |
+| Fraction of configs routed (HIGH band) | 22% (10/45) leave-one-cell-out (in-sample 20%, 9/45) | tr163_analysis.json -> out_of_sample_loocv.high_band |
+| Refusal-rate gap recovered (HIGH band) | 76.37% leave-one-cell-out (in-sample 76.17%) | tr163_analysis.json -> out_of_sample_loocv.high_band |
 | total_gap | 0.113778 | tr163_analysis.json |
 | phi-2 + GPTQ refusal_rate_delta | -0.90 (loses 90 percentage points) | rtsi_table.csv |
 | phi-2 + GPTQ score | 0.6199, HIGH | rtsi_table.csv |
@@ -171,3 +173,6 @@ cold-download wait from the final video.
 | Fine-tuned semantic refusal classifier | 97.73% accuracy; 0.976 refusal F1 on 441 XSTest responses | Crusadersk/quantsafe-refusal-modernbert/metrics.json |
 | Legacy opener lexicon on same XSTest split | 52.61% accuracy; 0.154 refusal F1 | Crusadersk/quantsafe-refusal-modernbert/metrics.json |
 | Debate example consensus | CONDITIONAL at 0.67 agreement (2 CONDITIONAL, 1 ROUTE) | debate_examples.json (Qwen3-8B + Phi-4-mini-instruct + SmolLM3-3B) |
+| External-labeled judge benchmark | BeaverTails 30k_test, N=400, seed 20260615, third-party human crowd labels; Qwen3Guard 84.0% [80.1–87.3] F1 0.854 cov 96.8%; Granite Guardian 84.75% [80.9–87.9] F1 0.847 cov 100%; Nemotron 81.0% [76.9–84.5] F1 0.808 cov 100%; unanimous 89.76% [86.0–92.6] at 83% coverage | substrate/external_judge_eval.json |
+| Prospective NF4 transfer (demonstration, n=2) | Falcon3-3B-Instruct: RTSI 0.0018, LOW, refusal_rate_delta +0.02, material_loss False; SmolLM2-1.7B-Instruct: RTSI 0.2408, MODERATE, refusal_rate_delta −0.10, material_loss True | substrate/prospective_validation.json |
+| MiniCPM4.1-8B compatibility | Excluded: trust_remote_code imports is_torch_fx_available removed in pinned transformers 5.12.0; incompatibility documented rather than runtime downgrade | — |

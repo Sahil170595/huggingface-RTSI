@@ -123,12 +123,44 @@ def load_debate_examples() -> dict | None:
         return None
 
 
+def load_external_judge_eval() -> dict | None:
+    """Cross-vendor external benchmark results (BeaverTails third-party labels).
+
+    Display-only — read once at startup. Returns None if absent so the Judge
+    Agreement tab renders a 'pending' placeholder instead of crashing.
+    """
+    try:
+        with (_SUBSTRATE / "external_judge_eval.json").open(encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def load_prospective_validation() -> dict | None:
+    """Prospective transfer results over new model families (NF4 blind application).
+
+    Display-only — read once at startup. Returns None if absent so the Score
+    a config tab renders a graceful placeholder instead of crashing.
+    """
+    try:
+        with (_SUBSTRATE / "prospective_validation.json").open(encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
 # Loaded once at import; the Judge Agreement tab reads this, never recomputes.
 JUDGE_RESULTS = load_judge_results()
 
 # Loaded once at import; the Constitutional Debate tab replays this. None until
 # the main thread generates substrate/debate_examples.json from a local run.
 DEBATE_EXAMPLE = load_debate_examples()
+
+# Loaded once at import; the Judge Agreement tab renders the external benchmark.
+EXTERNAL_JUDGE_EVAL = load_external_judge_eval()
+
+# Loaded once at import; the Score a config tab renders the prospective transfer.
+PROSPECTIVE_VALIDATION = load_prospective_validation()
 
 # Ed25519 signing key for screening records — created ONCE at startup.
 # Loads GRADIO_CERT_SIGNING_KEY_HEX if pinned, else an ephemeral keypair.
@@ -638,6 +670,270 @@ def build_disagreement_by_zone_fig(by_zone: dict) -> go.Figure:
             xref="paper", yref="paper", x=0.5, y=0.5,
         )
     return fig
+
+
+# ---------------------------------------------------------------------------
+# External benchmark table — Cross-Vendor External Benchmark section
+# ---------------------------------------------------------------------------
+
+# Vendor name mapping from model family slug.
+_FAMILY_VENDOR = {
+    "qwen3guard": "Alibaba",
+    "granite-guardian": "IBM",
+    "nemotron-safety-guard": "NVIDIA",
+    "minicpm": "OpenBMB",
+}
+
+
+def _build_external_benchmark_html() -> str:
+    """Render the cross-vendor external benchmark section from EXTERNAL_JUDGE_EVAL.
+
+    Iterates per_judge DYNAMICALLY — works for 3 or 4+ entries without hardcoding.
+    Gracefully returns a 'pending' note when the JSON is absent.
+    """
+    if not EXTERNAL_JUDGE_EVAL:
+        return _msg(
+            "<b>Cross-Vendor External Benchmark — pending.</b> "
+            "The external evaluation against BeaverTails third-party labels "
+            "has not yet been run. Once <code>substrate/external_judge_eval.json</code> "
+            "is present, this section renders automatically.",
+            color="#b45309",
+        )
+
+    per_judge = EXTERNAL_JUDGE_EVAL.get("per_judge", []) or []
+    dataset = EXTERNAL_JUDGE_EVAL.get("dataset", "BeaverTails")
+    split = EXTERNAL_JUDGE_EVAL.get("split", "30k_test")
+    sample_size = EXTERNAL_JUDGE_EVAL.get("sample_size", "?")
+    label_source = EXTERNAL_JUDGE_EVAL.get("label_source", "third-party human labels")
+    cohort = EXTERNAL_JUDGE_EVAL.get("cohort_selective", {}) or {}
+    cohort_accuracy = float(cohort.get("accuracy", 0.0)) if cohort else None
+    cohort_coverage = float(cohort.get("coverage", 0.0)) if cohort else None
+    cohort_ci_low = float(cohort.get("accuracy_ci_low", 0.0)) if cohort else None
+    cohort_ci_high = float(cohort.get("accuracy_ci_high", 0.0)) if cohort else None
+
+    # Table header.
+    header = (
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;'
+        'font-family:\'Hanken Grotesk\',sans-serif;color:#2A2722;">'
+        '<thead>'
+        '<tr style="border-bottom:2px solid #7B2D26;">'
+        '<th style="text-align:left;padding:7px 10px;font-weight:700;'
+        'letter-spacing:.04em;color:#1A1A1A;">Vendor</th>'
+        '<th style="text-align:left;padding:7px 10px;font-weight:700;'
+        'letter-spacing:.04em;color:#1A1A1A;">Model</th>'
+        '<th style="text-align:right;padding:7px 10px;font-weight:700;'
+        'letter-spacing:.04em;color:#1A1A1A;">Accuracy (95% CI)</th>'
+        '<th style="text-align:right;padding:7px 10px;font-weight:700;'
+        'letter-spacing:.04em;color:#1A1A1A;">Macro F1</th>'
+        '<th style="text-align:right;padding:7px 10px;font-weight:700;'
+        'letter-spacing:.04em;color:#1A1A1A;">Coverage</th>'
+        '</tr></thead><tbody>'
+    )
+
+    rows_html = ""
+    for i, entry in enumerate(per_judge):
+        family = str(entry.get("family", ""))
+        model_id = str(entry.get("model", ""))
+        vendor = _FAMILY_VENDOR.get(family, family or "—")
+        model_short = model_id.split("/")[-1] if "/" in model_id else model_id
+        metrics = entry.get("metrics", {}) or {}
+        accuracy = float(metrics.get("accuracy", 0.0))
+        ci_low = float(metrics.get("accuracy_ci_low", 0.0))
+        ci_high = float(metrics.get("accuracy_ci_high", 0.0))
+        macro_f1 = float(metrics.get("macro_f1", 0.0))
+        coverage = float(metrics.get("coverage", 0.0))
+        row_bg = "#FFFFFF" if i % 2 == 0 else "#FAF9F6"
+        rows_html += (
+            f'<tr style="background:{row_bg};border-bottom:1px solid #E5E0D8;">'
+            f'<td style="padding:7px 10px;font-weight:600;color:#1A1A1A;">'
+            f'{html.escape(vendor)}</td>'
+            f'<td style="padding:7px 10px;color:#4A453E;font-size:12px;">'
+            f'{html.escape(model_short)}</td>'
+            f'<td style="padding:7px 10px;text-align:right;'
+            f'font-variant-numeric:tabular-nums;">'
+            f'{accuracy:.1%} <span style="color:#6B6660;font-size:11px;">'
+            f'({ci_low:.1%}–{ci_high:.1%})</span></td>'
+            f'<td style="padding:7px 10px;text-align:right;'
+            f'font-variant-numeric:tabular-nums;">{macro_f1:.3f}</td>'
+            f'<td style="padding:7px 10px;text-align:right;'
+            f'font-variant-numeric:tabular-nums;">{coverage:.0%}</td>'
+            f'</tr>'
+        )
+
+    table_html = (
+        header + rows_html
+        + '</tbody></table>'
+    )
+
+    # Dataset + cohort line.
+    dataset_line = (
+        f'<div style="margin-top:10px;font-size:13px;color:#4A453E;">'
+        f'Dataset: <b>{html.escape(str(dataset))}</b> · split '
+        f'<b>{html.escape(str(split))}</b> · N = {sample_size} · '
+        f'{html.escape(str(label_source))}.'
+        f'</div>'
+    )
+
+    cohort_line = ""
+    if cohort_accuracy is not None and cohort_coverage is not None:
+        cohort_line = (
+            f'<div style="margin-top:8px;padding:10px 14px;border-radius:6px;'
+            f'background:#ECF0EA;border-left:4px solid #4F6F52;'
+            f'font-size:13px;color:#364B38;">'
+            f'<b>Cohort selective:</b> when all judges agree, accuracy '
+            f'<b>{cohort_accuracy:.1%}</b> '
+            f'(95% CI {cohort_ci_low:.1%}–{cohort_ci_high:.1%}) '
+            f'at coverage <b>{cohort_coverage:.0%}</b>.'
+            f'</div>'
+        )
+
+    caption = (
+        '<div style="margin-top:10px;padding:10px 14px;border-radius:6px;'
+        'background:#F3EFE9;border:1px solid #E5E0D8;'
+        'font-size:12px;color:#5C211C;line-height:1.5;">'
+        'Accuracy vs external third-party human labels (BeaverTails), not the '
+        'project\'s own corpus — this addresses the label-circularity limitation.'
+        '</div>'
+    )
+
+    section_head = (
+        '<div style="margin-top:20px;margin-bottom:10px;'
+        'padding-bottom:6px;border-bottom:1px solid #E5E0D8;">'
+        '<span style="font-family:\'Fraunces\',Georgia,serif;font-size:18px;'
+        'font-weight:600;color:#1A1A1A;letter-spacing:-.01em;">'
+        'Cross-Vendor External Benchmark</span>'
+        '</div>'
+    )
+
+    return (
+        section_head
+        + '<div style="overflow-x:auto;">' + table_html + '</div>'
+        + dataset_line
+        + cohort_line
+        + caption
+    )
+
+
+# ---------------------------------------------------------------------------
+# Prospective transfer table — "Score a config" new model families section
+# ---------------------------------------------------------------------------
+
+def _build_prospective_html() -> str:
+    """Render the prospective transfer section from PROSPECTIVE_VALIDATION.
+
+    Iterates cells DYNAMICALLY. Uses the existing RISK_COLOR / RISK_BG band helper.
+    Gracefully returns a placeholder when the JSON is absent.
+    """
+    if not PROSPECTIVE_VALIDATION:
+        return _msg(
+            "<b>Prospective transfer — pending.</b> "
+            "<code>substrate/prospective_validation.json</code> is not yet present.",
+            color="#b45309",
+        )
+
+    cells = PROSPECTIVE_VALIDATION.get("cells", []) or []
+    quant_method_note = str(
+        PROSPECTIVE_VALIDATION.get("quant_method_note", "") or ""
+    )
+
+    section_head = (
+        '<div style="margin-top:20px;margin-bottom:10px;'
+        'padding-bottom:6px;border-bottom:1px solid #E5E0D8;">'
+        '<span style="font-family:\'Fraunces\',Georgia,serif;font-size:18px;'
+        'font-weight:600;color:#1A1A1A;letter-spacing:-.01em;">'
+        'Prospective transfer — new model families</span>'
+        '</div>'
+    )
+
+    if not cells:
+        return section_head + _msg("No prospective cells recorded yet.", color="#b45309")
+
+    # Table header.
+    header = (
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;'
+        'font-family:\'Hanken Grotesk\',sans-serif;color:#2A2722;">'
+        '<thead>'
+        '<tr style="border-bottom:2px solid #7B2D26;">'
+        '<th style="text-align:left;padding:7px 10px;font-weight:700;'
+        'letter-spacing:.04em;color:#1A1A1A;">Family</th>'
+        '<th style="text-align:left;padding:7px 10px;font-weight:700;'
+        'letter-spacing:.04em;color:#1A1A1A;">Baseline → NF4</th>'
+        '<th style="text-align:right;padding:7px 10px;font-weight:700;'
+        'letter-spacing:.04em;color:#1A1A1A;">RTSI Score</th>'
+        '<th style="text-align:center;padding:7px 10px;font-weight:700;'
+        'letter-spacing:.04em;color:#1A1A1A;">Band</th>'
+        '<th style="text-align:right;padding:7px 10px;font-weight:700;'
+        'letter-spacing:.04em;color:#1A1A1A;">Refusal Δ</th>'
+        '<th style="text-align:center;padding:7px 10px;font-weight:700;'
+        'letter-spacing:.04em;color:#1A1A1A;">Material loss</th>'
+        '</tr></thead><tbody>'
+    )
+
+    rows_html = ""
+    for i, cell in enumerate(cells):
+        family = html.escape(str(cell.get("family", "—")))
+        baseline_repo = str(cell.get("baseline_repo", ""))
+        quant_repo = str(cell.get("quant_repo", ""))
+        baseline_short = baseline_repo.split("/")[-1] if "/" in baseline_repo else baseline_repo
+        quant_short = quant_repo.split("/")[-1] if "/" in quant_repo else quant_repo
+        bl_nf4 = (
+            html.escape(baseline_short) + " → " + html.escape(quant_short)
+            if baseline_short and quant_short else "—"
+        )
+        rtsi_score = float(cell.get("rtsi_score", 0.0))
+        band = str(cell.get("band", "UNKNOWN"))
+        band_color = RISK_COLOR.get(band, RISK_COLOR["UNKNOWN"])
+        refusal_delta = float(cell.get("refusal_rate_delta", 0.0))
+        delta_pts = refusal_delta * 100.0
+        delta_arrow = "▼" if delta_pts < 0 else ("▲" if delta_pts > 0 else "■")
+        delta_color = "#7B2D26" if delta_pts < 0 else ("#4F6F52" if delta_pts > 0 else "#6B6660")
+        material = bool(cell.get("material_loss", False))
+        mat_label = "yes" if material else "no"
+        mat_color = "#7B2D26" if material else "#4F6F52"
+        row_bg = "#FFFFFF" if i % 2 == 0 else "#FAF9F6"
+        rows_html += (
+            f'<tr style="background:{row_bg};border-bottom:1px solid #E5E0D8;">'
+            f'<td style="padding:7px 10px;font-weight:600;color:#1A1A1A;">'
+            f'{family}</td>'
+            f'<td style="padding:7px 10px;font-size:12px;color:#4A453E;">'
+            f'{bl_nf4}</td>'
+            f'<td style="padding:7px 10px;text-align:right;'
+            f'font-variant-numeric:tabular-nums;font-weight:700;color:#1A1A1A;">'
+            f'{rtsi_score:.4f}</td>'
+            f'<td style="padding:7px 10px;text-align:center;">'
+            f'<span style="font-size:12px;font-weight:700;color:#FAF9F6;'
+            f'background:{band_color};padding:3px 10px;border-radius:3px;'
+            f'letter-spacing:.08em;">{html.escape(band)}</span></td>'
+            f'<td style="padding:7px 10px;text-align:right;'
+            f'font-variant-numeric:tabular-nums;color:{delta_color};font-weight:700;">'
+            f'{delta_arrow} {delta_pts:+.0f} pp</td>'
+            f'<td style="padding:7px 10px;text-align:center;font-weight:600;'
+            f'color:{mat_color};">{mat_label}</td>'
+            f'</tr>'
+        )
+
+    table_html = header + rows_html + '</tbody></table>'
+
+    caption_parts = []
+    if quant_method_note:
+        caption_parts.append(html.escape(quant_method_note))
+    caption_parts.append(
+        "frozen 45-cell weights applied blind to new families; "
+        "a transfer demonstration, not a powered AUC."
+    )
+    caption = (
+        '<div style="margin-top:10px;padding:10px 14px;border-radius:6px;'
+        'background:#F3EFE9;border:1px solid #E5E0D8;'
+        'font-size:12px;color:#5C211C;line-height:1.5;">'
+        + " — ".join(caption_parts)
+        + '</div>'
+    )
+
+    return (
+        section_head
+        + '<div style="overflow-x:auto;">' + table_html + '</div>'
+        + caption
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1965,6 +2261,47 @@ with gr.Blocks(**_blocks_kwargs) as demo:
         "</div>",
         padding=False,
     )
+    gr.HTML(
+        '<div style="max-width:820px;margin:10px auto 18px;padding:14px 20px;'
+        'border-radius:8px;background:#FBFAF7;border:1px solid #E5E0D8;">'
+        '<div style="font-size:11px;font-weight:700;letter-spacing:.16em;'
+        'text-transform:uppercase;color:#7B2D26;margin-bottom:8px;">'
+        'TL;DR for judges</div>'
+        '<div style="font-size:14px;color:#2A2722;line-height:1.6;margin-bottom:12px;">'
+        'Catches quantized small models that quietly lost their safety refusals, '
+        'and signs a tamper-evident receipt of the check.'
+        '</div>'
+        '<div style="display:flex;flex-wrap:wrap;gap:8px;">'
+        '<a href="https://arxiv.org/abs/2606.10154" target="_blank" '
+        'style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;'
+        'padding:5px 12px;border-radius:4px;background:#F3E7E5;border:1px solid #C9A097;'
+        'font-size:12px;font-weight:600;color:#5C211C;letter-spacing:.02em;">'
+        '<span>&#128196;</span> Paper arXiv:2606.10154'
+        '</a>'
+        '<a href="https://huggingface.co/Crusadersk/quantsafe-refusal-modernbert" '
+        'target="_blank" '
+        'style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;'
+        'padding:5px 12px;border-radius:4px;background:#ECF0EA;border:1px solid #9BB49D;'
+        'font-size:12px;font-weight:600;color:#364B38;letter-spacing:.02em;">'
+        '<span>&#127981;</span> Refusal fine-tune'
+        '</a>'
+        '<a href="https://huggingface.co/datasets/Crusadersk/quantsafe-judge-benchmark" '
+        'target="_blank" '
+        'style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;'
+        'padding:5px 12px;border-radius:4px;background:#F4EEE0;border:1px solid #C9B47A;'
+        'font-size:12px;font-weight:600;color:#5C4A20;letter-spacing:.02em;">'
+        '<span>&#128202;</span> Judge-benchmark dataset'
+        '</a>'
+        '<a href="?tab=debate" '
+        'style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;'
+        'padding:5px 12px;border-radius:4px;background:#F3EFE9;border:1px solid #C8C0B0;'
+        'font-size:12px;font-weight:600;color:#4A453E;letter-spacing:.02em;">'
+        '<span>&#128483;</span> Agent-trace (debate)'
+        '</a>'
+        '</div>'
+        '</div>',
+        padding=False,
+    )
 
     with gr.Tabs() as tabs_root:
         # ----- Tab 1 ---------------------------------------------------------
@@ -1996,6 +2333,7 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                 "</div>",
                 padding=False,
             )
+            gr.HTML(_build_prospective_html(), padding=False)
 
             score_btn.click(score_config, [model_dd, quant_dd], [badge_html, rec_html])
 
@@ -2089,6 +2427,7 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                     ),
                     padding=False,
                 )
+                gr.HTML(_build_external_benchmark_html(), padding=False)
             else:
                 _ag = JUDGE_RESULTS.get("agreement", {}) or {}
                 _judges = JUDGE_RESULTS.get("judges", []) or []
@@ -2241,6 +2580,9 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                             "</div>",
                             padding=False,
                         )
+
+                # (5.5) Cross-vendor external benchmark (BeaverTails).
+                gr.HTML(_build_external_benchmark_html(), padding=False)
 
                 # (5) Provenance caption.
                 gr.HTML(

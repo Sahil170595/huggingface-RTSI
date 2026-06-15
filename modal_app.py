@@ -122,6 +122,7 @@ JUDGE_MODELS: set[str] = {
     "Qwen/Qwen3Guard-Gen-0.6B",
     "ibm-granite/granite-guardian-3.3-8b",
     "nvidia/Llama-3.1-Nemotron-Safety-Guard-8B-v3",
+    "openbmb/MiniCPM4.1-8B",
 }
 
 ALLOWED_MODELS: set[str] = DEBATE_MODELS | JUDGE_MODELS
@@ -190,6 +191,16 @@ MODEL_LOAD_POLICIES: dict[str, dict[str, object]] = {
         "precision": "bf16",
         "torch_dtype": "bfloat16",
         "load_in_4bit": False,
+    },
+    # MiniCPM4.1-8B: general reasoning model used as a cross-vendor moderation
+    # judge (4th judge alongside Qwen3Guard, Granite, Nemotron).  Requires
+    # trust_remote_code=True because the model ships custom modelling code.
+    # fp16 is the recommended dtype for A10g (24 GB VRAM is sufficient).
+    "openbmb/MiniCPM4.1-8B": {
+        "precision": "fp16",
+        "torch_dtype": "float16",
+        "load_in_4bit": False,
+        "trust_remote_code": True,
     },
 }
 
@@ -283,6 +294,9 @@ class DebateInferenceServer:
         policy = _load_policy_for(self.model_id)
         load_dtype = getattr(torch, str(policy["torch_dtype"]))
         use_4bit = bool(policy["load_in_4bit"])
+        # trust_remote_code is False by default; only MiniCPM4.1-8B sets it
+        # True because that model ships custom modelling code in the repo.
+        trust_remote_code = bool(policy.get("trust_remote_code", False))
         bnb_config = (
             BitsAndBytesConfig(
                 load_in_4bit=True,
@@ -295,13 +309,18 @@ class DebateInferenceServer:
         )
 
         revision = model_revision(self.model_id)
-        self.tok = AutoTokenizer.from_pretrained(self.model_id, revision=revision)
+        self.tok = AutoTokenizer.from_pretrained(
+            self.model_id,
+            revision=revision,
+            trust_remote_code=trust_remote_code,
+        )
         self.mdl = AutoModelForCausalLM.from_pretrained(
             self.model_id,
             revision=revision,
             quantization_config=bnb_config,
             dtype=load_dtype,
             device_map="auto",
+            trust_remote_code=trust_remote_code,
         )
         self.mdl.eval()
         if use_4bit:
@@ -406,6 +425,25 @@ class DebateInferenceServer:
                 [{"role": "user", "content": rendered}],
                 tokenize=False,
                 add_generation_prompt=True,
+            )
+        elif "minicpm" in mid:
+            # MiniCPM4.1-8B is a general reasoning model given an explicit
+            # moderation instruction.  build_minicpm_judge_prompt returns a
+            # single-element messages list; we apply the model's own chat
+            # template.  MiniCPM4.1's template supports enable_thinking=False
+            # to suppress the <think> preamble — we pass it to keep the
+            # generation budget within the 64-token cap.  If a future model
+            # revision drops that kwarg the container will raise at cold-start
+            # rather than silently over-budget; parse_minicpm strips any
+            # residual <think> block as a safety net regardless.
+            from judges import build_minicpm_judge_prompt
+
+            messages = build_minicpm_judge_prompt(prompt, response)
+            enc_text = self.tok.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,
             )
         elif "granite-guardian" in mid:
             messages = [
