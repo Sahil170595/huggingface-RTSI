@@ -20,11 +20,11 @@ EXPECTED_MODELS = {
     "HuggingFaceTB/SmolLM3-3B",
     "Qwen/Qwen3Guard-Gen-0.6B",
     "ibm-granite/granite-guardian-3.3-8b",
+    "nvidia/Llama-3.1-Nemotron-Safety-Guard-8B-v3",
     "Crusadersk/quantsafe-refusal-modernbert",
     "Qwen/Qwen3-0.6B",
     "Qwen/Qwen3-1.7B",
     "meta-llama/Llama-3.2-1B-Instruct",
-    "unsloth/Llama-3.2-1B-Instruct",
 }
 
 

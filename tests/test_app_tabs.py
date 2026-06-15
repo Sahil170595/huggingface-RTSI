@@ -349,6 +349,15 @@ class TestRunLiveDegenerate:
         assert len(outs) == 1
         assert "Unsupported backend" in outs[0][0]
 
+    @pytest.mark.parametrize("backend", ["hf", "modal"])
+    def test_remote_backends_are_not_public_live_probe_paths(self, backend):
+        outs = self._drain(
+            app.run_live(app.LIVE_MODELS[0], app.LIVE_MODELS[1], backend)
+        )
+        assert len(outs) == 1
+        assert "Unsupported backend" in outs[0][0]
+        assert "hosted ZeroGPU" in outs[0][0]
+
     def test_zerogpu_batches_both_models_in_one_allocation(self, monkeypatch):
         calls = []
 
@@ -416,3 +425,107 @@ class TestRunLiveDegenerate:
         assert "Live run failed" in panel
         assert "<script>" not in panel
         assert "&lt;script&gt;" in panel
+
+
+# ---------------------------------------------------------------------------
+# (e) public live-probe surface + Gradio 6 launch configuration
+# ---------------------------------------------------------------------------
+
+class TestPublicLiveProbeSurface:
+    def test_only_dependable_probe_backends_are_allowed(self):
+        assert app.LIVE_BACKENDS == frozenset({"zerogpu", "cpu"})
+
+    def test_public_model_list_uses_canonical_llama_checkpoint_only(self):
+        assert "meta-llama/Llama-3.2-1B-Instruct" in app.LIVE_MODELS
+        assert "unsloth/Llama-3.2-1B-Instruct" not in app.LIVE_MODELS
+        assert len(app.LIVE_MODELS) == len(set(app.LIVE_MODELS))
+
+    def test_backend_radio_exposes_honest_labels_only(self):
+        assert app.backend_radio.choices == [
+            ("Hosted ZeroGPU", "zerogpu"),
+            ("Process CPU", "cpu"),
+        ]
+        assert "Modal is reserved for the debate tab" in app.backend_radio.info
+        assert "Inference Providers" not in app.backend_radio.info
+
+
+class TestGradioLaunchConfiguration:
+    def test_visual_options_are_not_passed_to_blocks_constructor(self):
+        assert set(app._blocks_kwargs) == {"analytics_enabled", "title"}
+        assert not {"theme", "css_paths", "head"} & set(app._blocks_kwargs)
+
+    def test_visual_options_move_to_launch_on_pinned_gradio(self):
+        kwargs = app._launch_kwargs_for_gradio()
+        assert kwargs["theme"] is app.theme
+        assert kwargs["css_paths"] == [app._EDITORIAL_CSS_PATH]
+        assert kwargs["head"] == app._EDITORIAL_HEAD
+        assert kwargs["ssr_mode"] is False
+
+
+# ---------------------------------------------------------------------------
+# (g) _agreement_breakdown — unanimous agreement across ALL N judges
+# ---------------------------------------------------------------------------
+
+class TestAgreementBreakdown:
+    """The agree/split headline must count UNANIMOUS agreement across every
+    judge in the cohort, not just judges[0] vs judges[1]."""
+
+    @staticmethod
+    def _j(*vectors):
+        return [{"verdict_vector": list(v)} for v in vectors]
+
+    def test_two_judges_simple(self):
+        brk = app._agreement_breakdown(
+            self._j(["safe", "unsafe", "safe"], ["safe", "unsafe", "unsafe"]),
+            ["a", "b", "c"],
+        )
+        assert brk == {
+            "n_items": 3,
+            "agree": 2,
+            "disagree": 1,
+            "by_zone": {"a": 0, "b": 0, "c": 1},
+        }
+
+    def test_three_judges_unanimous_only(self):
+        # Item is 'agree' iff ALL THREE match; a 2-vs-1 split is a disagreement
+        # that the OLD judges[0]-vs-judges[1] logic would have MISSED.
+        a = ["safe", "unsafe", "safe", "unsafe"]
+        b = ["safe", "unsafe", "safe", "safe"]  # diverges from a only at idx 3
+        c = ["safe", "unsafe", "unsafe", "unsafe"]  # diverges at idx 2
+        brk = app._agreement_breakdown(self._j(a, b, c), ["z0", "z1", "z2", "z3"])
+        # idx0 all safe (agree), idx1 all unsafe (agree), idx2 split, idx3 split.
+        assert brk["agree"] == 2
+        assert brk["disagree"] == 2
+        assert brk["by_zone"]["z2"] == 1
+        assert brk["by_zone"]["z3"] == 1
+
+    def test_third_judge_can_break_an_otherwise_unanimous_pair(self):
+        # judges[0] and judges[1] agree everywhere; judge[2] dissents on one.
+        # Old 2-judge logic -> agree on all 3; correct N-judge logic -> 2/3.
+        a = ["safe", "safe", "safe"]
+        b = ["safe", "safe", "safe"]
+        c = ["safe", "unsafe", "safe"]
+        brk = app._agreement_breakdown(self._j(a, b, c), ["z0", "z1", "z2"])
+        assert brk["agree"] == 2
+        assert brk["disagree"] == 1
+
+    def test_empty_or_single_is_degenerate(self):
+        assert app._agreement_breakdown([], [])["n_items"] == 0
+        assert app._agreement_breakdown(self._j(["safe"]), ["z"])["n_items"] == 0
+
+    def test_matches_live_cache_3_judge_count(self):
+        # End-to-end pin against the regenerated SOTA cache: all 3 judges
+        # agree on 34/40, split on 6 (every split is in the borderline zone).
+        if not app.JUDGE_RESULTS:
+            pytest.skip("judge cache unavailable")
+        judges = app.JUDGE_RESULTS["judges"]
+        zones = app.JUDGE_RESULTS["zones"]
+        assert len(judges) == 3
+        brk = app._agreement_breakdown(judges, zones)
+        assert brk["n_items"] == 40
+        assert brk["agree"] == 34
+        assert brk["disagree"] == 6
+        # Every split lands in the borderline zone; the clear zones are unanimous.
+        assert brk["by_zone"].get("clear_safe", 0) == 0
+        assert brk["by_zone"].get("clear_unsafe", 0) == 0
+        assert brk["by_zone"]["borderline"] == 6

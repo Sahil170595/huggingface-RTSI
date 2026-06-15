@@ -6,8 +6,8 @@ returns a refusal-drift score plus a deploy / probe / route recommendation.
 
 Six tabs:
   1. Score a config         — static lookup over the 45-cell substrate (zero inference).
-  2. Exploratory live probe — compare two live HF models over internal probes.
-  3. Judge Agreement        — precomputed inter-judge agreement (κ) over the corpus.
+  2. Exploratory live probe — hosted ZeroGPU or process-local CPU inference.
+  3. Judge Agreement        — static cached inter-judge evidence over the corpus.
   4. Signed Screening Record — release-target-bound Ed25519 record, verified against the
                               Space's pinned issuer key.
   5. Constitutional Debate  — cached replay + Modal-gated live multi-model debate.
@@ -164,9 +164,12 @@ LIVE_MODELS = [
     "Qwen/Qwen3-1.7B",
     "Qwen/Qwen2.5-1.5B-Instruct",
     "meta-llama/Llama-3.2-1B-Instruct",
-    "unsloth/Llama-3.2-1B-Instruct",
 ]
-LIVE_BACKENDS = frozenset({"zerogpu", "modal", "hf", "cpu"})
+# Public live-probe paths. The lower-level inference module retains its remote
+# adapters for compatibility, but they are intentionally not exposed here:
+# Modal /generate serves the debate catalog, and HF Inference Providers add an
+# unnecessary cloud path to this small-checkpoint probe.
+LIVE_BACKENDS = frozenset({"zerogpu", "cpu"})
 
 # Risk-band palette.
 RISK_COLOR = {"LOW": "#4F6F52", "MODERATE": "#9A7B3A", "HIGH": "#7B2D26", "UNKNOWN": "#6B6660"}
@@ -220,7 +223,7 @@ MODAL_TOKEN_ENV = "MODAL_TOKEN"
 # tokens/second, so the per-probe budget is the main latency lever — 48 tokens
 # is enough to capture a refusal opening without minutes of extra decode time.
 LIVE_CPU_MAX_NEW_TOKENS = 48
-LIVE_MAX_NEW_TOKENS = 64  # hf/modal backends: remote decode, not CPU-bound here
+LIVE_MAX_NEW_TOKENS = 64  # ZeroGPU decode budget; CPU uses the tighter cap above.
 
 
 @spaces.GPU(duration=60)
@@ -536,22 +539,27 @@ def _kappa_badge(kappa: float | None, band: str) -> str:
 
 
 def _agreement_breakdown(judges: list[dict], zones: list[str]) -> dict:
-    """Derive agree/disagree counts from the two verdict vectors at load.
+    """Derive agree/disagree counts from ALL N verdict vectors at load.
+
+    An item counts as 'agree' iff EVERY judge gave the same verdict; otherwise
+    it is a 'split'. This generalises to any cohort size (2 raters -> Cohen,
+    3+ -> Fleiss) so the "agree on X / split on Y" headline always reflects the
+    real cohort rather than just the first two judges.
 
     Returns total agree/disagree counts plus a per-zone disagreement tally.
     Counts and zone labels only — never the underlying prompt/response text.
     """
-    if len(judges) < 2:
+    vectors = [j.get("verdict_vector", []) or [] for j in judges]
+    if len(vectors) < 2 or any(not v for v in vectors):
         return {"n_items": 0, "agree": 0, "disagree": 0, "by_zone": {}}
-    va = judges[0].get("verdict_vector", []) or []
-    vb = judges[1].get("verdict_vector", []) or []
-    n = min(len(va), len(vb))
+    n = min(len(v) for v in vectors)
     agree = disagree = 0
     by_zone: dict[str, int] = {}
     for i in range(n):
         zone = zones[i] if i < len(zones) else "unlabeled"
         by_zone.setdefault(zone, 0)
-        if va[i] == vb[i]:
+        # Unanimous across every judge -> agree; any divergence -> split.
+        if len({v[i] for v in vectors}) == 1:
             agree += 1
         else:
             disagree += 1
@@ -1397,8 +1405,8 @@ def run_live(baseline_model: str, candidate_model: str, backend: str):
     if backend not in LIVE_BACKENDS:
         yield (
             _msg(
-                "Unsupported backend. Choose ZeroGPU, Modal, Hugging Face "
-                "Inference Providers, or CPU from the menu.",
+                "Unsupported backend. Choose hosted ZeroGPU or the process CPU "
+                "path from the menu.",
                 color="#7B2D26",
             ),
             _empty_delta_fig(),
@@ -1424,11 +1432,6 @@ def run_live(baseline_model: str, candidate_model: str, backend: str):
             f"One ZeroGPU allocation batches both checkpoints across {n} probes "
             f"each. A cold model download can take a couple of minutes."
         )
-    else:
-        eta_note = (
-            f"Remote backend — 2×{n} generations; a cold endpoint can take a "
-            f"couple of minutes to warm. Progress is shown per probe."
-        )
     yield (
         _msg(f"Screening {n} internal probes on <b>{backend}</b>… {eta_note}",
              color="#7B2D26"),
@@ -1436,10 +1439,6 @@ def run_live(baseline_model: str, candidate_model: str, backend: str):
         "",
     )
 
-    modal_hint = (
-        " For <b>modal</b>, check the MODAL_ENDPOINT/MODAL_TOKEN secrets."
-        if backend == "modal" else ""
-    )
     try:
         if backend == "zerogpu":
             (
@@ -1470,8 +1469,8 @@ def run_live(baseline_model: str, candidate_model: str, backend: str):
                     "torch and transformers are required for this backend"
                 ) from exc
 
-            # CPU and remote services expose per-probe progress. ZeroGPU uses
-            # one allocation above to avoid queueing once per probe.
+            # CPU exposes per-probe progress. ZeroGPU uses one allocation above
+            # to avoid queueing once per probe.
             runs: list[tuple[str, str, list[str], list[int]]] = [
                 ("baseline", baseline_model, [], []),
                 ("candidate", candidate_model, [], []),
@@ -1580,7 +1579,8 @@ def run_live(baseline_model: str, candidate_model: str, backend: str):
     except ImportError as exc:
         yield (
             _msg(f"Backend <b>{backend}</b> is missing a dependency: "
-                 f"{html.escape(str(exc))}. Try <b>modal</b> or <b>hf</b>.",
+                 f"{html.escape(str(exc))}. Install the local inference "
+                 "dependencies or use hosted <b>ZeroGPU</b>.",
                  color="#7B2D26"),
             _empty_delta_fig(), "",
         )
@@ -1589,7 +1589,7 @@ def run_live(baseline_model: str, candidate_model: str, backend: str):
         yield (
             _msg(f"Live run failed: {type(exc).__name__}: "
                  f"{html.escape(str(exc))}. Try a smaller pair or another "
-                 f"backend.{modal_hint}",
+                 "public probe backend.",
                  color="#7B2D26"),
             _empty_delta_fig(), "",
         )
@@ -1703,6 +1703,11 @@ turn that audit into a repeatable release gate:
   falls **55.45 pp**. Both measurements route the artifact away from release.
 - It flagged [`Crusadersk/qwen2.5-1.5b-gptq-4bit`](https://huggingface.co/Crusadersk/qwen2.5-1.5b-gptq-4bit)
   as the **single highest-risk config** in my catalog — refusal-drift **0.7864 (HIGH)**.
+
+**Who this is for:** me first. I publish 11 public GPTQ/AWQ 4-bit checkpoints.
+QuantSafe turns the retrospective audit of that catalog into a repeatable
+publisher workflow: inspect a measured release target, assign SCREEN_PASS /
+REVIEW / ROUTE, and retain a signed record of the screen and evidence version.
 
 The rest of this page documents exactly how that screen decides and what its
 signature does and does not prove.
@@ -1915,13 +1920,25 @@ _blocks_kwargs = {
     "analytics_enabled": False,
     "title": "QuantSafe — will this quant jailbreak your model?",
 }
-_blocks_parameters = inspect.signature(gr.Blocks).parameters
-if "theme" in _blocks_parameters:
-    _blocks_kwargs["theme"] = theme
-if "css_paths" in _blocks_parameters:
-    _blocks_kwargs["css_paths"] = [_EDITORIAL_CSS_PATH]
-if "head" in _blocks_parameters:
-    _blocks_kwargs["head"] = _EDITORIAL_HEAD
+
+
+def _launch_kwargs_for_gradio() -> dict:
+    """Return visual/runtime launch options supported by the installed Gradio."""
+    parameters = inspect.signature(gr.Blocks.launch).parameters
+    kwargs: dict = {}
+    if "theme" in parameters:
+        kwargs["theme"] = theme
+    if "css_paths" in parameters:
+        kwargs["css_paths"] = [_EDITORIAL_CSS_PATH]
+    if "head" in parameters:
+        kwargs["head"] = _EDITORIAL_HEAD
+    if "ssr_mode" in parameters:
+        # ZeroGPU's injected SSR mode starts and then stops the Node sidecar
+        # before the Python app is marked healthy. Client rendering is stable.
+        kwargs["ssr_mode"] = False
+    return kwargs
+
+
 _event_parameters = inspect.signature(gr.Button.click).parameters
 _private_event_kwargs = (
     {"api_visibility": "private"}
@@ -1953,8 +1970,8 @@ with gr.Blocks(**_blocks_kwargs) as demo:
         # ----- Tab 1 ---------------------------------------------------------
         with gr.Tab("Score a config", id="score"):
             gr.Markdown(
-                "Look up any measured **(model, quant)** cell. No inference — "
-                "this reads the validated 45-cell substrate."
+                "Look up any measured **(model, quant)** cell. This is static "
+                "cached evidence: no model inference runs in this tab."
             )
             gr.HTML(_killer_cells_banner(), padding=False)
             # Pre-score the headline cell so the panel lands populated, not blank.
@@ -1988,7 +2005,10 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                 "Compare two live small-model checkpoints over a fixed internal "
                 "probe set. This is an **exploratory cross-model drift demo**, not "
                 "a calibrated quantization verdict: RTSI was defined for a "
-                "quantized checkpoint and its matched baseline."
+                "quantized checkpoint and its matched baseline. Hosted ZeroGPU "
+                "runs on Hugging Face compute; the CPU fallback runs in the "
+                "current Python process (the Space CPU when hosted, your machine "
+                "when launched locally)."
             )
             gr.HTML(
                 '<div style="padding:8px 12px;border-radius:8px;background:#F3EFE9;'
@@ -2027,14 +2047,18 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                         value=LIVE_MODELS[1],
                     )
             backend_radio = gr.Radio(
-                ["zerogpu", "modal", "hf", "cpu"],
+                [
+                    ("Hosted ZeroGPU", "zerogpu"),
+                    ("Process CPU", "cpu"),
+                ],
                 value="zerogpu" if RUNNING_ON_HF_SPACE else "cpu",
                 label="Backend",
-                info=("zerogpu = batched RTX Pro 6000 allocation (Space default) · "
-                      "hf = Inference Providers chat_completion (needs HF_TOKEN secret) · "
-                      "modal = GPU endpoint (needs MODAL_ENDPOINT + MODAL_TOKEN secrets; "
-                      "Bearer-token auth, cold start can take ~2 min) · "
-                      "cpu = local fallback"),
+                info=(
+                    "Hosted ZeroGPU = one shared Hugging Face GPU allocation for "
+                    "both checkpoints. Process CPU = local-process fallback; on "
+                    "the public Space this is hosted Space CPU, while a local "
+                    "launch uses your own CPU. Modal is reserved for the debate tab."
+                ),
             )
             live_btn = gr.Button("Run exploratory probe", variant="primary")
             live_badge = gr.HTML(padding=False)
@@ -2058,9 +2082,9 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                 gr.HTML(
                     _msg(
                         "<b>Judge agreement is not yet computed.</b> The precomputed "
-                        "results cache is unavailable here. Live judging runs on a GPU "
-                        "backend; once a run lands, this screen shows the inter-judge "
-                        "agreement (κ) and where the judges split.",
+                        "results cache is unavailable here. Judge generation is a "
+                        "separate authenticated Modal GPU job; this public tab only "
+                        "displays the resulting static agreement evidence once present.",
                         color="#b45309",
                     ),
                     padding=False,
@@ -2075,18 +2099,35 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                 _n_judges = int(_ag.get("n_judges", len(_judges)) or len(_judges))
                 _brk = _agreement_breakdown(_judges, _zones)
 
+                # The agreement statistic name comes from the cache: 2 raters
+                # -> Cohen's kappa, 3+ -> Fleiss' kappa. Interpolating it (rather
+                # than hardcoding "Cohen's") keeps the headline correct when the
+                # cohort grows, since Cohen's is only defined for two raters.
+                _method = str(_ag.get("method", "") or "").lower()
+                _method_label = {
+                    "fleiss": "Fleiss' kappa",
+                    "cohen": "Cohen's kappa",
+                    "single": "single-judge (no agreement)",
+                }.get(_method, "inter-rater kappa")
+                # English number word for the "### The N judges" heading.
+                _count_word = {
+                    1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
+                    6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten",
+                }.get(_n_judges, str(_n_judges))
+
                 # (1) Headline κ + color-coded band badge.
                 gr.HTML(_kappa_badge(_kappa, _band), padding=False)
                 gr.HTML(
                     f'<div style="margin-top:6px;font-size:14px;color:#4A453E;">'
-                    f"<b>{_n_judges} independent safety classifiers</b> · "
-                    f"<b>{_n_items} prompts</b> · Cohen's kappa"
+                    f"<b>{_n_judges} guard models from distinct families</b> · "
+                    f"<b>{_n_items} prompts</b> · {_method_label}"
                     f"</div>",
                     padding=False,
                 )
 
-                # (4) Honest framing — interpolated from JUDGE_RESULTS, never
-                # hardcoded, so the prose can't drift from the cached numbers.
+                # (4) Honest framing — every number AND the rater-count word and
+                # statistic name are interpolated from JUDGE_RESULTS, never
+                # hardcoded, so the prose can't drift from the cached cohort.
                 _kappa_str = (
                     f"{float(_kappa):.2f}"
                     if isinstance(_kappa, (int, float)) else "—"
@@ -2097,17 +2138,18 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                     else "agreement does not pass the cohort reliability gate"
                 )
                 gr.Markdown(
-                    "Cross-checking independent judges measures whether a "
-                    "safety-judge cohort can be trusted. Here two independent "
-                    f"classifiers corroborate at **kappa={_kappa_str} ({_band})** — "
+                    "Cross-checking distinct guard-model families measures how "
+                    f"stable the cohort's labels are. Here {_count_word} models "
+                    "corroborate at "
+                    f"**kappa={_kappa_str} ({_band})** — "
                     f"{_trust_clause} — while the disagreements flag "
-                    "exactly the cases that warrant human review. That is why you "
-                    "cross-check independent judges instead of trusting a single one. "
-                    "Agreement is not accuracy; the curated-label check below reports both."
+                    "exactly the cases that warrant human review. Agreement is "
+                    "not accuracy or statistical independence; the project-label "
+                    "check below reports both agreement and point-estimate accuracy."
                 )
 
-                # (2) The two judges by name + verdict counts (table + bars).
-                gr.Markdown("### The two judges")
+                # (2) The judges by name + verdict counts (table + bars).
+                gr.Markdown(f"### The {_count_word} judges")
                 with gr.Row():
                     with gr.Column(scale=1):
                         gr.Dataframe(
@@ -2152,7 +2194,7 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                         '<div style="margin:8px 0;padding:14px 18px;border-radius:8px;'
                         'background:#ECF0EA;border-left:5px solid #4F6F52;'
                         'font-size:14px;color:#364B38;line-height:1.55;">'
-                        "<b>Curated-label check:</b> when both judges emit the same "
+                        "<b>Project-label check:</b> when all judges emit the same "
                         f"non-unclear verdict, the panel covers <b>{_covered}/{_total} "
                         f"({_coverage:.0%})</b> and gets <b>{_correct}/{_covered} "
                         f"({_accuracy:.1%})</b> correct "
@@ -2165,9 +2207,13 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                 gr.HTML(
                     '<div style="margin-top:10px;padding:8px 12px;border-radius:8px;'
                     'background:#F3EFE9;color:#5C211C;font-size:13px;">'
-                    "🔒 Verdicts are precomputed over a fixed internal probe corpus "
-                    "(held internally, never displayed). Live judging runs on a GPU "
-                    "backend."
+                    "🔒 Verdicts are precomputed over a fixed labeled corpus, not "
+                    "surfaced raw in this UI; the full labeled benchmark is published "
+                    "openly at <a href='https://huggingface.co/datasets/Crusadersk/"
+                    "quantsafe-judge-benchmark' target='_blank'>Crusadersk/"
+                    "quantsafe-judge-benchmark</a>. This tab is static cached "
+                    "evidence: the judge runs were produced on the authenticated "
+                    "Modal GPU backend, but viewing this tab launches no inference."
                     "</div>",
                     padding=False,
                 )
@@ -2300,11 +2346,11 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                 padding=False,
             )
 
-            gr.Markdown("### Cached debate (replay)")
+            gr.Markdown("### Cached debate (static replay)")
             # Rendered once at build time from the cached example, if present.
             gr.HTML(_render_debate(DEBATE_EXAMPLE), padding=False)
 
-            gr.Markdown("### Run live debate")
+            gr.Markdown("### Run live debate on Modal")
             # Both secrets are required: the endpoint 401s requests without the
             # bearer token, so MODAL_ENDPOINT alone yields a guaranteed failure.
             _modal_wired = bool(os.environ.get(MODAL_ENDPOINT_ENV)) and bool(
@@ -2345,20 +2391,8 @@ with gr.Blocks(**_blocks_kwargs) as demo:
 
 
 if __name__ == "__main__":
-    # Gradio 6 moved visual configuration from Blocks() to launch(). Keep the
-    # signature checks so source-only tooling can still import under late 5.x.
-    _launch_kwargs: dict = {}
-    _launch_parameters = inspect.signature(gr.Blocks.launch).parameters
-    if "theme" in _launch_parameters:
-        _launch_kwargs["theme"] = theme
-    if "css_paths" in _launch_parameters:
-        _launch_kwargs["css_paths"] = [_EDITORIAL_CSS_PATH]
-    if "head" in _launch_parameters:
-        _launch_kwargs["head"] = _EDITORIAL_HEAD
-    if "ssr_mode" in _launch_parameters:
-        # ZeroGPU's injected SSR mode starts and then stops the Node sidecar
-        # before the Python app is marked healthy. Client rendering is stable.
-        _launch_kwargs["ssr_mode"] = False
+    # Gradio 6 moved visual configuration from Blocks() to launch().
+    _launch_kwargs = _launch_kwargs_for_gradio()
     # Bounded queue: heavy listeners (exploratory probe / live debate) share one
     # worker slot via concurrency_id="heavy"; extra users queue, never OOM.
     demo.queue(max_size=16).launch(**_launch_kwargs)
