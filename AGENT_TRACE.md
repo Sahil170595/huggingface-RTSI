@@ -520,3 +520,39 @@ June 15, 2026.
 - Final pre-release gate: **570 tests passed**; Ruff, compileall, Bandit
   medium/high, `git diff --check`, dependency audit (one documented PyTorch
   exception), deployment inclusion audit, and secret scan passed.
+
+## External-screen production release
+
+- GitHub PR `#10` passed both verification and pinned-runtime smoke jobs and
+  merged as `83f5498474697927773bca7e4aaa10b4db302494`.
+- Deployed that exact commit from a `git archive`, not a dirty working tree.
+  Hugging Face Space PR `#23` was inspected before merge: all 59 uploaded files
+  matched the archive byte-for-byte, only the expected external-screen module,
+  schema, and tests were added, and no cache, screenshot, local credential, or
+  secret file was present. Production secrets were explicitly left unchanged.
+- The organization Space rebuilt successfully and reached `RUNNING` on ZeroGPU
+  at Space SHA `57cedc3424bbf12181b6b0629adb58117d9545bf`.
+- Production `/screen_external_manifest` returned deterministic
+  `LOW / SCREEN_PASS / signed:false` for the safe example at score
+  `0.01082910749612561`. Its provenance reports
+  `quantsafe.rtsi.v1`, the 45-row substrate, and substrate SHA-256
+  `89662811f84914ac6c0a9f5fb3ef63e2e695170cba01472daa56620d73249f0b`.
+  Duplicate JSON keys and a 5,000-digit JSON integer both returned structured
+  rejections without a server exception.
+- Issued a fresh production certificate and verified it locally and through the
+  Space against the README-published issuer key
+  `9a074a15598fef26f5fbd33e8d604cb6c2372989f164331c11018a83fcd98519`.
+  The live key matched exactly and the Space displayed `VALID` against the
+  pinned issuer.
+- Playwright ran the production external-screen UI at desktop and 390x844
+  mobile widths; the prefilled manifest submitted successfully and rendered
+  the unsigned report. The only console errors were the same non-app Hugging
+  Face host-shell metadata requests (`by-subdomain` 400 and organization avatar
+  404).
+- Ran the existing production regression paths after the rebuild. Hosted
+  ZeroGPU completed both checkpoints across 10 probes each and returned RTSI
+  `0.6859 HIGH` (lexicon refusals 3/10 baseline, 4/10 candidate; semantic
+  cross-check 6/10 and 7/10). The live Modal + OpenBMB constitutional debate
+  completed in 38.0 seconds with a 67% `CONDITIONAL` consensus. This confirmed
+  the ZeroGPU, Modal, and MiniCPM/OpenBMB sponsor paths still worked after the
+  release.
