@@ -76,7 +76,7 @@ proof that those exact weights generated the historical measurement.
 | [`phi-2-gptq-4bit`](https://huggingface.co/Crusadersk/phi-2-gptq-4bit) | [`6385e88d733f…`](https://huggingface.co/Crusadersk/phi-2-gptq-4bit/tree/6385e88d733fe95b67dc6d18f264b83c6462e681) | RTSI `0.6199` (`HIGH`) | `ROUTE` |
 | [`qwen2.5-1.5b-gptq-4bit`](https://huggingface.co/Crusadersk/qwen2.5-1.5b-gptq-4bit) | [`4e1c7d4d78a3…`](https://huggingface.co/Crusadersk/qwen2.5-1.5b-gptq-4bit/tree/4e1c7d4d78a3fbb82742207baa7ac305bd836cb5) | RTSI `0.7864` (`HIGH`, matrix maximum) | `ROUTE` |
 
-[Open the Space](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier) · [Watch the 36-second judge demo](demo/quantsafe-demo.webm) · [Download the social-ready MP4](demo/quantsafe-demo.mp4) · [Browse the GitHub source](https://github.com/Sahil170595/huggingface-RTSI) · [Browse the Space source](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier/tree/main) · [Read the paper](https://arxiv.org/abs/2606.10154) · [Field notes](FIELD_NOTES.md) · [Agent trace](AGENT_TRACE.md) · [Judge benchmark dataset](https://huggingface.co/datasets/Crusadersk/quantsafe-judge-benchmark) · [Adversarial audit](SECURITY_AUDIT.md)
+[Open the Space](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier) · [Watch the 36-second judge demo](demo/quantsafe-demo.webm) · [Download the social-ready MP4](demo/quantsafe-demo.mp4) · [Browse the GitHub source](https://github.com/Sahil170595/huggingface-RTSI) · [Browse the Space source](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier/tree/main) · [Read the paper](https://arxiv.org/abs/2606.10154) · [Field notes](FIELD_NOTES.md) · [Agent trace](AGENT_TRACE.md) · [Judge benchmark dataset](https://huggingface.co/datasets/Crusadersk/quantsafe-judge-benchmark) · [Adversarial audit](SECURITY_AUDIT.md) · [Launch post](https://www.linkedin.com/posts/sahilkadadekar_quantsafe-certifier-a-hugging-face-space-activity-7472355496486711296-Rgl9) · [Launch article](https://huggingface.co/blog/build-small-hackathon/quantsafe)
 
 **Built & audited in the open.** The full agent build/audit trace is published at [Crusadersk/quantsafe-agent-trace](https://huggingface.co/datasets/Crusadersk/quantsafe-agent-trace).
 
@@ -366,6 +366,8 @@ remains stable.
 | Demo storyboard | Ready in [`demo/STORYBOARD.md`](demo/STORYBOARD.md) |
 | Public demo video | [`demo/quantsafe-demo.webm`](demo/quantsafe-demo.webm), 35.7 seconds, hard-captioned; [MP4](demo/quantsafe-demo.mp4) for social upload |
 | Official hackathon organization | Complete: `build-small-hackathon` |
+| Public social post | [LinkedIn launch post](https://www.linkedin.com/posts/sahilkadadekar_quantsafe-certifier-a-hugging-face-space-activity-7472355496486711296-Rgl9) |
+| Launch article | [Hugging Face blog](https://huggingface.co/blog/build-small-hackathon/quantsafe) |
 
 ## Local verification
 
