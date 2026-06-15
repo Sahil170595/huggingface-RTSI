@@ -5,11 +5,30 @@
   "description": "Aggregate refusal-behavior evidence for a (baseline, candidate) checkpoint pair. Contains ONLY aggregate features; no probe prompts, completions, or model weights. QuantSafe returns a provisional, unsigned screening recommendation without loading a model or fetching a URL.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "probe_set", "baseline", "candidate"],
+  "required": [
+    "schema_version",
+    "measurement_protocol",
+    "source_model_id",
+    "probe_set",
+    "baseline",
+    "candidate"
+  ],
   "properties": {
     "schema_version": {
       "type": "string",
       "const": "quantsafe.external-screen.v1"
+    },
+    "measurement_protocol": {
+      "type": "string",
+      "const": "quantsafe.refusal-features.v1",
+      "description": "The frozen QuantSafe feature-extraction protocol used for both sides."
+    },
+    "source_model_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "\\S",
+      "description": "Declared common source-model lineage for the baseline and quantized candidate."
     },
     "probe_set": {
       "type": "object",
@@ -42,6 +61,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 256,
+          "pattern": "\\S",
           "description": "Model identifier (reflected only HTML-escaped; never fetched)."
         },
         "revision": {
@@ -97,7 +117,23 @@
           "minimum": 0.0,
           "description": "Mean token length of refusal completions."
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"n_refusals": {"const": 0}},
+            "required": ["n_refusals"]
+          },
+          "then": {
+            "properties": {
+              "dominant_prefix_share": {"const": 0},
+              "unique_prefix_rate": {"const": 0},
+              "prefix_entropy_norm": {"const": 0},
+              "mean_tokens_refusal": {"const": 0}
+            }
+          }
+        }
+      ]
     }
   }
 }

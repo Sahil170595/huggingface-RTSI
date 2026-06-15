@@ -485,3 +485,38 @@ June 15, 2026.
   validation-rejection surface, injection non-reflection, input immutability,
   no-network / no-model-load by construction, accordion rendering, public+named
   endpoint exposure, six-tab integrity, and client-snippet accuracy.
+
+## External-screen adversarial release pass
+
+- Ran an independent adversarial review plus direct malformed-input probing
+  before release. It found that a JSON integer beyond Python's configured digit
+  limit could escape the parser and raise, uppercase/padded hashes disagreed
+  with the published schema, and zero-refusal manifests could carry impossible
+  nonzero refusal-only features. All three paths now return structured
+  rejections; the public handler keeps its never-raise contract.
+- Tightened the v1 request to declare one `source_model_id` lineage and the
+  frozen `quantsafe.refusal-features.v1` measurement protocol. Duplicate JSON
+  keys, impossible zero/one-refusal aggregates, rates below
+  `1 / n_refusals`, and non-positive refusal lengths are rejected before
+  scoring.
+- Loaded the frozen 45-row substrate once per process and added reproducibility
+  metadata to every report: scorer version, measurement protocol, substrate
+  SHA-256, row count, and thresholds. Scorer-artifact failures return a
+  non-diagnostic `scorer_unavailable` response rather than exposing an
+  exception.
+- Set the arithmetic-only public endpoint to `queue=False` so it cannot fill
+  the shared Gradio event queue used by interactive work. The 32 KB statement
+  was corrected to an application-level manifest cap rather than a transport
+  boundary claim.
+- Hardened release tooling: local `quantsafe-live*.png`, caches, virtualenvs,
+  and credential material are excluded from Space uploads. Secret
+  synchronization is now opt-in and the deployment credential is no longer
+  implicitly mirrored into the Space runtime as `HF_TOKEN`.
+- Verified the real local Gradio route with `gradio_client`: the safe example
+  returned `LOW / SCREEN_PASS / signed:false`; a 5,000-digit JSON integer was
+  rejected without a server exception. Playwright exercised the collapsed
+  panel and result at desktop and 390x844 mobile sizes with zero console
+  errors.
+- Final pre-release gate: **570 tests passed**; Ruff, compileall, Bandit
+  medium/high, `git diff --check`, dependency audit (one documented PyTorch
+  exception), deployment inclusion audit, and secret scan passed.

@@ -203,10 +203,12 @@ client = Client("build-small-hackathon/quantsafe-certifier")
 
 manifest = json.dumps({
     "schema_version": "quantsafe.external-screen.v1",
-    "probe_set": {"count": 120, "sha256": "<64-char hex of your probe set>"},
+    "measurement_protocol": "quantsafe.refusal-features.v1",
+    "source_model_id": "your-org/your-model",
+    "probe_set": {"count": 120, "sha256": "a" * 64},
     "baseline": {
         "repo_id": "your-org/your-model",
-        "revision": "<40-char hex commit sha>",
+        "revision": "0" * 40,
         "quantization": "FP16",
         "features": {
             "n_refusals": 58,
@@ -218,7 +220,7 @@ manifest = json.dumps({
     },
     "candidate": {
         "repo_id": "your-org/your-model",
-        "revision": "<40-char hex commit sha>",
+        "revision": "1" * 40,
         "quantization": "Q4_K_M",
         "features": {
             "n_refusals": 57,
@@ -236,14 +238,16 @@ print(report["band"], report["action"], "signed:", report["signed"])
 ```
 
 The five features per side are the QuantSafe behavioral features, computed by
-*you* over your probe set: `n_refusals` (count of refused probes),
+*you* over the same probe set using the frozen
+`quantsafe.refusal-features.v1` extraction protocol: `n_refusals` (count of refused probes),
 `dominant_prefix_share`, `unique_prefix_rate`, `prefix_entropy_norm` (all in
 `[0, 1]`), and `mean_tokens_refusal` (`>= 0`). The request is capped at 32 KB and
 strictly validated; NaN/inf, malformed SHAs, and out-of-range metrics are
 rejected with a structured error and **no scoring**. The response carries the
 RTSI `score`, the `band` (`LOW`/`MODERATE`/`HIGH`/`UNKNOWN`), the routing
 `action`, per-feature `feature_contributions` that sum to the score, an
-`evidence_digest`, and `signed: false`. The machine-readable request contract is
+`evidence_digest`, scorer/substrate provenance, and `signed: false`. The
+machine-readable request contract is
 [`schemas/external_screen_v1.schema.json`](schemas/external_screen_v1.schema.json).
 
 A total refusal collapse (candidate refuses nothing while the baseline refused

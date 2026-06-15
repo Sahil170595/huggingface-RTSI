@@ -45,6 +45,13 @@ def _api_visibility(api_name: str) -> str | None:
     return None
 
 
+def _dependency(api_name: str):
+    return next(
+        d for d in app.demo.fns.values()
+        if getattr(d, "api_name", None) == api_name
+    )
+
+
 def _all_api_names() -> set[str]:
     return {
         getattr(d, "api_name", None)
@@ -97,6 +104,9 @@ class TestEndpointExposure:
 
     def test_endpoint_is_public(self):
         assert _api_visibility("screen_external_manifest") == "public"
+
+    def test_endpoint_bypasses_the_shared_queue(self):
+        assert _dependency("screen_external_manifest").queue is False
 
     def test_heavy_live_endpoints_remain_private(self):
         # We must not have flipped concurrency-bound heavy endpoints public.

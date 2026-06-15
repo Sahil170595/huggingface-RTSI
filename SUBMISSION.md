@@ -90,9 +90,11 @@ measurement data and does not load its source checkpoints at runtime.
   report is provisional, `signed: false`, scope
   `user-supplied-aggregate-evidence`, and is a **screening recommendation, not a
   safety certification**.
-- Input is capped at 32 KB and strictly validated (NaN/inf, malformed SHAs, and
-  out-of-range metrics rejected with no scoring); the request contract is frozen
-  in `schemas/external_screen_v1.schema.json`.
+- Manifest text is capped at 32 KB and strictly validated (duplicate keys,
+  NaN/inf, malformed SHAs, impossible aggregate combinations, and out-of-range
+  metrics rejected with no scoring). The request declares one source-model
+  lineage and the frozen `quantsafe.refusal-features.v1` protocol; the contract
+  is in `schemas/external_screen_v1.schema.json`.
 - Reuses the frozen 45-row substrate scoring path; per-feature contributions sum
   to the RTSI score. Refusal collapse forces `HIGH`/`ROUTE`; both-sides-zero is
   `UNKNOWN`/`INSUFFICIENT_SIGNAL`. No existing score, certificate, provider, tab,

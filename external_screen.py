@@ -60,6 +60,8 @@ from rtsi_core import (
 
 REQUEST_SCHEMA_VERSION = "quantsafe.external-screen.v1"
 RESPONSE_SCHEMA_VERSION = "quantsafe.external-screen.response.v1"
+MEASUREMENT_PROTOCOL = "quantsafe.refusal-features.v1"
+SCORER_VERSION = "quantsafe.rtsi.v1"
 SCOPE = "user-supplied-aggregate-evidence"
 
 # Reject anything bigger than this many bytes of UTF-8 request text. The schema
@@ -91,6 +93,7 @@ _UNIT_INTERVAL_METRICS: tuple[str, ...] = (
 )
 
 _HEX = set("0123456789abcdef")
+_CONSISTENCY_TOLERANCE = 1e-9
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +131,12 @@ def _finite_number(value: Any, where: str) -> float:
         raise ExternalScreenError("type", f"'{where}' must be a number, not a boolean")
     if not isinstance(value, (int, float)):
         raise ExternalScreenError("type", f"'{where}' must be a number")
-    f = float(value)
+    try:
+        f = float(value)
+    except (OverflowError, ValueError):
+        raise ExternalScreenError(
+            "non_finite", f"'{where}' must be a finite JSON number"
+        ) from None
     if not math.isfinite(f):
         raise ExternalScreenError("non_finite", f"'{where}' must be finite (no NaN/inf)")
     return f
@@ -137,12 +145,11 @@ def _finite_number(value: Any, where: str) -> float:
 def _hexstr(value: Any, length: int, where: str) -> str:
     if not isinstance(value, str):
         raise ExternalScreenError("type", f"'{where}' must be a string")
-    s = value.strip()
-    if len(s) != length or not set(s.lower()) <= _HEX:
+    if len(value) != length or not set(value) <= _HEX:
         raise ExternalScreenError(
             "bad_hex", f"'{where}' must be a {length}-character lowercase hex string"
         )
-    return s.lower()
+    return value
 
 
 def _short_str(value: Any, where: str, *, max_len: int = 256) -> str:
@@ -207,6 +214,47 @@ def _validate_features(obj: Any, where: str, *, probe_count: int) -> dict[str, f
         )
     cleaned["mean_tokens_refusal"] = mtr
 
+    # Refusal-only aggregates are undefined when no refusal exists. Accepting
+    # non-zero values in that case can fabricate a low-drift comparison.
+    if n_ref_raw == 0:
+        non_zero = [
+            name for name in _RAW_FEATURE_NAMES[1:]
+            if abs(cleaned[name]) > _CONSISTENCY_TOLERANCE
+        ]
+        if non_zero:
+            raise ExternalScreenError(
+                "inconsistent_features",
+                f"'{where}' must set all refusal-only features to 0 when "
+                "'n_refusals' is 0",
+            )
+        return cleaned
+
+    min_share = 1.0 / n_ref_raw
+    for name in ("dominant_prefix_share", "unique_prefix_rate"):
+        if cleaned[name] + _CONSISTENCY_TOLERANCE < min_share:
+            raise ExternalScreenError(
+                "inconsistent_features",
+                f"'{where}.{name}' must be at least 1/n_refusals "
+                f"({min_share:.12g})",
+            )
+    if cleaned["mean_tokens_refusal"] <= 0.0:
+        raise ExternalScreenError(
+            "inconsistent_features",
+            f"'{where}.mean_tokens_refusal' must be > 0 when refusals exist",
+        )
+
+    # One refusal necessarily has one unique/dominant prefix and zero entropy.
+    if n_ref_raw == 1:
+        expected_one = ("dominant_prefix_share", "unique_prefix_rate")
+        if any(
+            abs(cleaned[name] - 1.0) > _CONSISTENCY_TOLERANCE
+            for name in expected_one
+        ) or abs(cleaned["prefix_entropy_norm"]) > _CONSISTENCY_TOLERANCE:
+            raise ExternalScreenError(
+                "inconsistent_features",
+                f"'{where}' has impossible prefix aggregates for one refusal",
+            )
+
     return cleaned
 
 
@@ -258,20 +306,33 @@ def validate_manifest(raw: str | bytes | Mapping[str, Any]) -> dict[str, Any]:
                 "non_finite", "request contains a non-finite JSON literal (NaN/inf)"
             )
 
+        def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+            obj: dict[str, Any] = {}
+            for key, value in pairs:
+                if key in obj:
+                    raise ExternalScreenError(
+                        "duplicate_field",
+                        f"request contains duplicate field '{key}'",
+                    )
+                obj[key] = value
+            return obj
+
         try:
             data = json.loads(
-                payload_bytes.decode("utf-8"), parse_constant=_reject_constant
+                payload_bytes.decode("utf-8"),
+                parse_constant=_reject_constant,
+                object_pairs_hook=_reject_duplicate_keys,
             )
         except ExternalScreenError:
             raise
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except (json.JSONDecodeError, UnicodeDecodeError, ValueError, RecursionError):
             raise ExternalScreenError("invalid_json", "request is not valid UTF-8 JSON")
     elif isinstance(raw, Mapping):
         # Re-serialize to enforce the same byte ceiling and to prove the object
         # is JSON-clean (no NaN/inf, no non-serializable values) up front.
         try:
             serialized = json.dumps(raw, allow_nan=False).encode("utf-8")
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError, RecursionError):
             raise ExternalScreenError(
                 "invalid_json", "request object is not JSON-serializable or contains NaN/inf"
             )
@@ -286,7 +347,14 @@ def validate_manifest(raw: str | bytes | Mapping[str, Any]) -> dict[str, Any]:
         raise ExternalScreenError("type", "request must be JSON text or an object")
 
     root = _require_mapping(data, "request")
-    allowed_top = {"schema_version", "probe_set", "baseline", "candidate"}
+    allowed_top = {
+        "schema_version",
+        "measurement_protocol",
+        "source_model_id",
+        "probe_set",
+        "baseline",
+        "candidate",
+    }
     missing_top = [k for k in allowed_top if k not in root]
     if missing_top:
         raise ExternalScreenError(
@@ -301,6 +369,14 @@ def validate_manifest(raw: str | bytes | Mapping[str, Any]) -> dict[str, Any]:
             "bad_schema_version",
             f"unsupported schema_version (expected '{REQUEST_SCHEMA_VERSION}')",
         )
+
+    protocol = root["measurement_protocol"]
+    if protocol != MEASUREMENT_PROTOCOL:
+        raise ExternalScreenError(
+            "bad_measurement_protocol",
+            f"unsupported measurement_protocol (expected '{MEASUREMENT_PROTOCOL}')",
+        )
+    source_model_id = _short_str(root["source_model_id"], "source_model_id")
 
     # probe_set: {count:int>0, sha256:64hex}
     probe_set = _require_mapping(root["probe_set"], "probe_set")
@@ -324,6 +400,8 @@ def validate_manifest(raw: str | bytes | Mapping[str, Any]) -> dict[str, Any]:
 
     return {
         "schema_version": REQUEST_SCHEMA_VERSION,
+        "measurement_protocol": MEASUREMENT_PROTOCOL,
+        "source_model_id": source_model_id,
         "probe_set": {"count": count, "sha256": probe_sha},
         "baseline": baseline,
         "candidate": candidate,
@@ -342,6 +420,28 @@ def canonicalize(validated: Mapping[str, Any]) -> str:
 def evidence_digest(validated: Mapping[str, Any]) -> str:
     """sha256 of the canonicalized validated request."""
     return hashlib.sha256(canonicalize(validated).encode("utf-8")).hexdigest()
+
+
+def _substrate_digest(csv_path: str) -> str:
+    with open(csv_path, "rb") as handle:
+        return hashlib.sha256(handle.read()).hexdigest()
+
+
+_DEFAULT_SUBSTRATE_ROWS = tuple(load_substrate_feature_rows(_DEFAULT_SUBSTRATE_CSV))
+_DEFAULT_SUBSTRATE_SHA256 = _substrate_digest(_DEFAULT_SUBSTRATE_CSV)
+
+
+def _scorer_provenance(substrate_sha256: str, substrate_rows: int) -> dict[str, Any]:
+    return {
+        "version": SCORER_VERSION,
+        "measurement_protocol": MEASUREMENT_PROTOCOL,
+        "substrate_sha256": substrate_sha256,
+        "substrate_rows": substrate_rows,
+        "thresholds": {
+            "low": RTSI_THRESHOLD_LOW,
+            "moderate": RTSI_THRESHOLD_MODERATE,
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -497,25 +597,58 @@ def screen_external_manifest(
             "evidence_digest": None,
             "signed": False,
             "limitations": list(_LIMITATIONS),
+            "scorer": _scorer_provenance(
+                _DEFAULT_SUBSTRATE_SHA256, len(_DEFAULT_SUBSTRATE_ROWS)
+            ),
             "error": {"code": exc.code, "message": str(exc)},
         }
 
-    csv_path = substrate_csv or _DEFAULT_SUBSTRATE_CSV
-    substrate_rows = load_substrate_feature_rows(csv_path)
+    try:
+        if substrate_csv is None:
+            substrate_rows = list(_DEFAULT_SUBSTRATE_ROWS)
+            substrate_sha256 = _DEFAULT_SUBSTRATE_SHA256
+        else:
+            substrate_rows = load_substrate_feature_rows(substrate_csv)
+            substrate_sha256 = _substrate_digest(substrate_csv)
 
-    base_feats = validated["baseline"]["features"]
-    cand_feats = validated["candidate"]["features"]
+        base_feats = validated["baseline"]["features"]
+        cand_feats = validated["candidate"]["features"]
 
-    # Candidate-minus-baseline deltas over the four RTSI features. feature_deltas
-    # reads the level metrics; n_refusals is carried separately for the override.
-    deltas = feature_deltas(cand_feats, base_feats)
+        # Candidate-minus-baseline deltas over the four RTSI features.
+        deltas = feature_deltas(cand_feats, base_feats)
 
-    all_rows = list(substrate_rows) + [deltas]
-    scores = compute_rtsi(all_rows)
-    score = float(scores[-1])
-    band = classify_risk(score)
+        all_rows = substrate_rows + [deltas]
+        scores = compute_rtsi(all_rows)
+        score = float(scores[-1])
+        band = classify_risk(score)
 
-    contributions = _feature_contributions(all_rows)
+        contributions = _feature_contributions(all_rows)
+    except Exception:
+        return {
+            "schema_version": RESPONSE_SCHEMA_VERSION,
+            "status": "error",
+            "scope": SCOPE,
+            "score": None,
+            "band": "UNKNOWN",
+            "action": "INSUFFICIENT_SIGNAL",
+            "feature_deltas": {},
+            "feature_contributions": [],
+            "feedback": [
+                "Screening could not be completed because the frozen scorer "
+                "artifact was unavailable or invalid.",
+                "No model was loaded and no content was retained.",
+            ],
+            "evidence_digest": evidence_digest(validated),
+            "signed": False,
+            "limitations": list(_LIMITATIONS),
+            "scorer": _scorer_provenance(
+                _DEFAULT_SUBSTRATE_SHA256, len(_DEFAULT_SUBSTRATE_ROWS)
+            ),
+            "error": {
+                "code": "scorer_unavailable",
+                "message": "the frozen scorer artifact was unavailable or invalid",
+            },
+        }
 
     base_n = int(base_feats["n_refusals"])
     cand_n = int(cand_feats["n_refusals"])
@@ -575,10 +708,7 @@ def screen_external_manifest(
         "evidence_digest": evidence_digest(validated),
         "signed": False,
         "limitations": list(_LIMITATIONS),
-        "thresholds": {
-            "low": RTSI_THRESHOLD_LOW,
-            "moderate": RTSI_THRESHOLD_MODERATE,
-        },
+        "scorer": _scorer_provenance(substrate_sha256, len(substrate_rows)),
     }
 
 
@@ -594,6 +724,8 @@ def safe_example_manifest() -> dict[str, Any]:
     """
     return {
         "schema_version": REQUEST_SCHEMA_VERSION,
+        "measurement_protocol": MEASUREMENT_PROTOCOL,
+        "source_model_id": "your-org/your-model",
         "probe_set": {
             "count": 120,
             "sha256": "a" * 64,

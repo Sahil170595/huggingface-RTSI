@@ -27,7 +27,7 @@ and the live Hugging Face Space.
 
 ## Verification
 
-- The full suite (**477 tests**) passes under Gradio 6.18.0 and Transformers 5.12.0. A smoke-runtime CI job installs the full pinned requirements.txt (CPU torch) and imports the entire runtime stack, so a transformers/torch API break at the pinned versions fails CI.
+- The full suite (**570 tests**) passes under Gradio 6.18.0 and Transformers 5.12.0. A smoke-runtime CI job installs the full pinned requirements.txt (CPU torch) and imports the entire runtime stack, so a transformers/torch API break at the pinned versions fails CI.
 - `ruff check .` and `git diff --check` pass.
 - Bandit reports no medium- or high-severity findings.
 - Every public model revision and documentation link resolves.
@@ -50,12 +50,14 @@ constrained by construction:
   completion, and never logs supplied content. Tests poison `socket.connect`,
   `urllib.request.urlopen`, and `AutoModelForCausalLM.from_pretrained` and assert
   a clean run, proving no egress or model load on the scoring path.
-- **Strict input validation before any work.** Input is capped at 32 KB
-  (measured on the wire bytes), parsed with `parse_constant` so `NaN`/`Infinity`
-  JSON literals are rejected, then schema-checked: exact `schema_version`,
+- **Strict manifest validation before scoring.** Manifest text is capped at 32 KB,
+  parsed with duplicate-key and `NaN`/`Infinity` rejection, then schema-checked:
+  exact `schema_version` and measurement protocol, declared common source-model
+  lineage,
   64-hex probe digest, 40-hex revisions, unit-interval shares/rates/entropy,
   `n_refusals` integer in `[0, count]`, `mean_tokens_refusal >= 0`, and a strict
-  no-unknown-fields / no-missing-fields policy. Every rejection returns a
+  no-unknown-fields / no-missing-fields policy. Refusal-only features must be
+  internally consistent with `n_refusals`. Every rejection returns a
   structured error with **no scoring** and never raises to the client.
 - **No reflection of attacker-controlled metadata.** `repo_id` / `revision` /
   `quantization` are validated but are not echoed into the response, and the
@@ -70,6 +72,10 @@ constrained by construction:
   certificate semantics, provider integrations, the six tabs, and the
   heavy-worker concurrency limits are untouched; the two GPU listeners and the
   page-load helper remain private (`api_visibility: private`).
+- **Queue isolation and reproducibility.** The arithmetic-only public endpoint
+  bypasses the shared Gradio event queue, the frozen substrate is loaded once,
+  and every report includes the scorer version, thresholds, substrate row
+  count, and substrate SHA-256.
 
 ## Residual Risk
 

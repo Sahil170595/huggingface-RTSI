@@ -2453,14 +2453,9 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                     "border-radius:6px;padding:12px;overflow:auto;font-size:12px;"
                     "margin-top:8px;\">"
                     "from gradio_client import Client\n"
-                    "import json\n\n"
+                    "from pathlib import Path\n\n"
                     "client = Client(\"build-small-hackathon/quantsafe-certifier\")\n"
-                    "manifest = json.dumps({\n"
-                    "  \"schema_version\": \"quantsafe.external-screen.v1\",\n"
-                    "  \"probe_set\": {\"count\": 120, \"sha256\": \"&lt;64-hex&gt;\"},\n"
-                    "  \"baseline\":  {\"repo_id\": \"your-org/your-model\", ...},\n"
-                    "  \"candidate\": {\"repo_id\": \"your-org/your-model\", ...},\n"
-                    "})\n"
+                    "manifest = Path(\"manifest.json\").read_text(encoding=\"utf-8\")\n"
                     "report = client.predict(manifest, api_name=\"/screen_external_manifest\")\n"
                     "print(report[\"band\"], report[\"action\"], report[\"signed\"])"
                     "</pre>"
@@ -2473,6 +2468,7 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                     screen_external,
                     [screen_input],
                     [screen_output],
+                    queue=False,
                     **_public_event_kwargs("screen_external_manifest"),
                 )
 
