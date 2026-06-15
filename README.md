@@ -80,6 +80,20 @@ proof that those exact weights generated the historical measurement.
 
 **Built & audited in the open.** The full agent build/audit trace is published at [Crusadersk/quantsafe-agent-trace](https://huggingface.co/datasets/Crusadersk/quantsafe-agent-trace).
 
+## Sponsors, prizes & badges at a glance
+
+Every partner below is a load-bearing runtime or build dependency, not a metadata mention; deeper sourced evidence for each is in the sections further down.
+
+| Partner | How it is load-bearing here | Prize fit |
+|---|---|---|
+| **Modal** | Authenticated A10G endpoints run the live constitutional debate and regenerate the judge cache — Modal powers **both development and runtime** | Best Use of Modal |
+| **OpenBMB** | `MiniCPM4.1-8B` is a live debater (flips `DEPLOY → ROUTE` after critique) and a benchmarked guard on the external N=400 BeaverTails set | Best MiniCPM Build |
+| **NVIDIA** | `Nemotron-Safety-Guard-8B-v3` is one of three independent-family judge models (native BF16 through the Modal `/judge` backend) | Nemotron Hardware Prize |
+| **OpenAI** | Codex-attributed commits across the connected GitHub repo and Space history | Best Use of Codex |
+| **Gradio** | Custom six-tab `gr.Blocks` app with a public, named `/screen_external_manifest` API | — |
+
+**Self-declared badges:** `achievement:offbrand` (custom editorial UI) · `achievement:welltuned` ([published ModernBERT refusal fine-tune](https://huggingface.co/Crusadersk/quantsafe-refusal-modernbert)) · `achievement:llama` (34 GGUF cells through llama.cpp via Ollama) · `achievement:sharing` ([public agent trace](AGENT_TRACE.md)) · `achievement:fieldnotes` ([engineering report](FIELD_NOTES.md))
+
 ## Who this is for
 
 I am the first user. I publish 11 public GPTQ/AWQ 4-bit checkpoints on Hugging
