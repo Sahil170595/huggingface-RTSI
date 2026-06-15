@@ -46,7 +46,10 @@ IGNORE = [
     ".history/*",
     ".ruff_cache/*",
     "output/*",
-    "AGENT_TRACE.md",
+    # The org token can commit source but cannot negotiate LFS uploads. Demo
+    # media is uploaded separately through the authenticated Hugging Face UI.
+    "demo/*.mp4",
+    "demo/*.webm",
     "social/*",
     "_applog.txt",
     "*.log",
@@ -55,6 +58,8 @@ IGNORE = [
     "scripts/regen_judges.py",
     "scripts/regen_validation.py",
     "scripts/train_refusal_classifier.py",
+    "scripts/publish_judge_benchmark.py",
+    "scripts/publish_release_warnings.py",
 ]
 
 # Secrets to mirror into the Space when present in the local environment.
@@ -83,14 +88,15 @@ def main() -> int:
 
     if not args.no_upload:
         print(f"Uploading working tree to {REPO_ID} ...")
-        api.upload_folder(
+        commit = api.upload_folder(
             repo_id=REPO_ID,
             repo_type="space",
             folder_path=str(ROOT),
             ignore_patterns=IGNORE,
             commit_message="Deploy audited QuantSafe Certifier",
+            create_pr=True,
         )
-        print("Upload complete.")
+        print(f"Upload complete: {commit.pr_url or commit.commit_url}")
 
     info = api.space_info(REPO_ID)
     print(f"Space runtime stage: {getattr(getattr(info, 'runtime', None), 'stage', '?')}")

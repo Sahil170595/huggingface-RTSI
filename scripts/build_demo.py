@@ -104,9 +104,9 @@ def title_slide() -> Image.Image:
     draw.rounded_rectangle((284, 518, 996, 588), radius=12,
                            fill=(243, 239, 233), outline=(216, 210, 199), width=2)
     draw.text((W // 2, 540),
-              "A live release gate: detect -> route -> sign -> verify -> escalate",
+              "A release gate I used: detect -> route -> sign -> verify -> act",
               font=font(FONT_BOLD, 20), fill=INK, anchor="ma")
-    draw.text((W // 2, 655), "Production Space | 49-second judge cut",
+    draw.text((W // 2, 655), "Production Space | 36-second judge cut",
               font=font(FONT_REGULAR, 17), fill=WARM, anchor="ma")
     return image
 
@@ -123,8 +123,8 @@ def close_slide() -> Image.Image:
     rows = [
         ("45", "measured quantization cells"),
         ("34", "GGUF cells through llama.cpp / Ollama"),
-        ("0.84", "family-transfer ROC AUC"),
-        ("97.73%", "held-out accuracy from the ModernBERT cross-check"),
+        ("0.793", "Fleiss' kappa across three guard-model families"),
+        ("95.0%", "Nemotron's point estimate on the 40-item project corpus"),
     ]
     y = 255
     for metric, label in rows:
@@ -136,7 +136,7 @@ def close_slide() -> Image.Image:
     draw.rounded_rectangle((206, 512, 1074, 590), radius=12,
                            fill=(236, 240, 234), outline=SAGE, width=2)
     draw.text((W // 2, 533),
-              "ZeroGPU | Modal | Gradio | Ed25519 | arXiv:2606.10154",
+              "Nemotron | Modal | Codex | llama.cpp | Ed25519 | arXiv:2606.10154",
               font=font(FONT_BOLD, 20), fill=(54, 75, 56), anchor="ma")
     draw.text((W // 2, 627),
               "huggingface.co/spaces/build-small-hackathon/quantsafe-certifier",
@@ -147,53 +147,43 @@ def close_slide() -> Image.Image:
 
 
 SLIDES = [
-    ("00-title.png", 4.20, None, "", ""),
+    ("00-title.png", 3.80, None, "", ""),
     (
-        "01-failure.png", 4.80, "01 / FAILURE",
+        "01-failure.png", 4.40, "01 / FAILURE",
         "Benchmarks stayed flat. Refusals collapsed.",
         "The published phi-2 GPTQ release fell from 91% refusal to 1%.",
     ),
     (
-        "02-route.png", 5.40, "02 / DETECT + ROUTE",
+        "02-route.png", 4.50, "02 / DETECT + ROUTE",
         "QuantSafe calls HIGH - and blocks the release.",
         "RTSI 0.6199. Route the riskiest 20% and recover 76% of the refusal-rate gap.",
     ),
     (
-        "10-zerogpu.png", 4.80, "03 / LIVE ZEROGPU",
-        "A real RTX Pro 6000 probe, not a mock.",
-        "Two Qwen checkpoints, ten private probes, aggregate drift only. Completed in 27 seconds.",
+        "03-nemotron.png", 4.80, "03 / CROSS-CHECK",
+        "Three guard-model families expose where the evidence splits.",
+        "Nemotron has the highest point estimate: 95% on this 40-item project-labeled corpus.",
     ),
     (
-        "03-certificate.png", 5.30, "04 / BIND",
+        "04-certificate.png", 4.50, "04 / BIND",
         "Turn the decision into a portable signed record.",
         "The record binds the action to a published Hub revision, evidence hashes, and issuer identity.",
     ),
     (
-        "04-verified.png", 4.40, "05 / VERIFY",
+        "05-verified.png", 3.60, "05 / VERIFY",
         "The production issuer key verifies.",
         "Ed25519 verification is pinned to the README-published Space key - not the key inside the record.",
     ),
     (
-        "05-tampered.png", 4.40, "06 / ATTACK",
+        "06-tampered.png", 3.60, "06 / ATTACK",
         "Flip one signed field: INVALID.",
         "Tampering breaks the signature; a foreign re-sign is rejected as issuer substitution.",
     ),
     (
-        "06-debate-top.png", 4.80, "07 / ESCALATE",
-        "Borderline calls go to a constitutional debate.",
-        "Qwen3-8B, Phi-4-mini, and SmolLM3 argue independently through authenticated Modal workers.",
+        "07-release-warning.png", 4.80, "07 / ACT",
+        "The gate changed a real public release.",
+        "The model card now carries the ROUTE decision and requires direct safety evaluation before deployment.",
     ),
-    (
-        "08-debate-verdict.png", 5.00, "08 / CONSENSUS",
-        "A genuine two-thirds decision - not a single-model guess.",
-        "The final round reaches CONDITIONAL at 67% agreement and exposes the dissenting ROUTE vote.",
-    ),
-    (
-        "09-evidence.png", 4.60, "09 / EVIDENCE",
-        "Research-backed, scoped, and explicit about limits.",
-        "45 cells, family-transfer validation, a fine-tuned semantic cross-check, and arXiv:2606.10154.",
-    ),
-    ("10-close.png", 5.20, None, "", ""),
+    ("08-close.png", 4.50, None, "", ""),
 ]
 
 
@@ -204,7 +194,7 @@ def build_slides(capture_dir: Path) -> list[Path]:
         target = BUILD_DIR / name
         if name == "00-title.png":
             image = title_slide()
-        elif name == "10-close.png":
+        elif name == "08-close.png":
             image = close_slide()
         else:
             source = capture_dir / name

@@ -8,7 +8,7 @@ API contract (POST /generate):
     Request  header: Authorization: Bearer <QUANTSAFE_MODAL_TOKEN>
                      (token lives in the modal.Secret "quantsafe-auth")
     Request  JSON: {"model": "<hf_model_id>", "prompt": "<text>", "max_new_tokens": 220}
-    Response JSON: {"text": "<completion>", "quantization": "nf4-4bit" | "fp16"}
+    Response JSON: {"text": "<completion>", "quantization": "<actual precision>"}
     Errors:        HTTP 401 (secret unset, or bearer token missing/mismatched)
                    HTTP 400 (unknown model, empty prompt, bad max_new_tokens)
                    — FastAPI HTTPException, body {"detail": "<message>"}
@@ -121,6 +121,7 @@ DEBATE_MODELS: set[str] = {
 JUDGE_MODELS: set[str] = {
     "Qwen/Qwen3Guard-Gen-0.6B",
     "ibm-granite/granite-guardian-3.3-8b",
+    "nvidia/Llama-3.1-Nemotron-Safety-Guard-8B-v3",
 }
 
 ALLOWED_MODELS: set[str] = DEBATE_MODELS | JUDGE_MODELS
@@ -130,17 +131,90 @@ MAX_INPUT_CHARS = 32_768
 MAX_NEW_TOKENS = 1_024
 
 
-def _quantization_for(model_id: str) -> str:
-    """Precision label reported in the response contract.
+MODEL_LOAD_POLICIES: dict[str, dict[str, object]] = {
+    # Legacy 7B debate models retain their deployed NF4 memory policy.
+    "Qwen/Qwen2.5-7B-Instruct": {
+        "precision": "nf4-4bit",
+        "torch_dtype": "float16",
+        "load_in_4bit": True,
+    },
+    "mistralai/Mistral-7B-Instruct-v0.3": {
+        "precision": "nf4-4bit",
+        "torch_dtype": "float16",
+        "load_in_4bit": True,
+    },
+    # Remaining debate models retain their existing unquantized fp16 policy.
+    "Qwen/Qwen2.5-1.5B-Instruct": {
+        "precision": "fp16",
+        "torch_dtype": "float16",
+        "load_in_4bit": False,
+    },
+    "Qwen/Qwen2.5-0.5B-Instruct": {
+        "precision": "fp16",
+        "torch_dtype": "float16",
+        "load_in_4bit": False,
+    },
+    "HuggingFaceTB/SmolLM2-1.7B-Instruct": {
+        "precision": "fp16",
+        "torch_dtype": "float16",
+        "load_in_4bit": False,
+    },
+    "Qwen/Qwen3-8B": {
+        "precision": "fp16",
+        "torch_dtype": "float16",
+        "load_in_4bit": False,
+    },
+    "microsoft/Phi-4-mini-instruct": {
+        "precision": "fp16",
+        "torch_dtype": "float16",
+        "load_in_4bit": False,
+    },
+    "HuggingFaceTB/SmolLM3-3B": {
+        "precision": "fp16",
+        "torch_dtype": "float16",
+        "load_in_4bit": False,
+    },
+    # Judge policies are explicit because similarly sized models can require
+    # different native dtypes.
+    "Qwen/Qwen3Guard-Gen-0.6B": {
+        "precision": "fp16",
+        "torch_dtype": "float16",
+        "load_in_4bit": False,
+    },
+    "ibm-granite/granite-guardian-3.3-8b": {
+        "precision": "fp16",
+        "torch_dtype": "float16",
+        "load_in_4bit": False,
+    },
+    "nvidia/Llama-3.1-Nemotron-Safety-Guard-8B-v3": {
+        "precision": "bf16",
+        "torch_dtype": "bfloat16",
+        "load_in_4bit": False,
+    },
+}
 
-    Mirrors DebateInferenceServer.load(): 7B models are loaded 4-bit NF4 to fit
-    VRAM; everything smaller loads plain fp16. Keep the two in sync via this
-    single helper.
-    """
-    return "nf4-4bit" if ("7B" in model_id or "7b" in model_id) else "fp16"
+
+def _load_policy_for(model_id: str) -> dict[str, object]:
+    """Return the explicit load policy for a served model."""
+    try:
+        return MODEL_LOAD_POLICIES[model_id]
+    except KeyError as exc:
+        raise ValueError(f"No Modal load policy configured for model {model_id!r}") from exc
+
+
+def _dtype_precision(dtype: object) -> str:
+    """Normalize a loaded torch dtype to the public precision label."""
+    labels = {
+        "torch.float16": "fp16",
+        "torch.bfloat16": "bf16",
+    }
+    try:
+        return labels[str(dtype)]
+    except KeyError as exc:
+        raise RuntimeError(f"Unsupported loaded model dtype: {dtype}") from exc
 
 # ---------------------------------------------------------------------------
-# Container image — torch + transformers in fp16, bitsandbytes for 4-bit on A10g
+# Container image — torch + transformers, bitsandbytes for NF4 on A10g
 # ---------------------------------------------------------------------------
 
 _image = (
@@ -156,7 +230,11 @@ _image = (
         "protobuf==7.35.1",       # required by sentencepiece wheels
         "fastapi[standard]==0.137.0",  # Modal 1.x web endpoints are FastAPI-backed
     )
-    .add_local_python_source("model_revisions")
+    # judges.py is the single source of truth for the NemoGuard classification
+    # prompt (build_nemotron_guard_prompt). Its module-level imports are all
+    # stdlib (numpy is lazy-imported inside the kappa helpers), so it is safe to
+    # ship into the container image without pulling a heavy dependency at import.
+    .add_local_python_source("model_revisions", "judges")
 )
 
 app = modal.App("debate-backend", image=_image)
@@ -202,15 +280,15 @@ class DebateInferenceServer:
                 f"Allowed: {sorted(ALLOWED_MODELS)}"
             )
 
-        # Use 4-bit NF4 quantisation for 7B models to keep VRAM under 10 GB.
-        # 0.5B / 1.5B models skip quantisation (they're already tiny).
-        use_4bit = _quantization_for(self.model_id) == "nf4-4bit"
+        policy = _load_policy_for(self.model_id)
+        load_dtype = getattr(torch, str(policy["torch_dtype"]))
+        use_4bit = bool(policy["load_in_4bit"])
         bnb_config = (
             BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_quant_type="nf4",
                 bnb_4bit_use_double_quant=True,
-                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_compute_dtype=load_dtype,
             )
             if use_4bit
             else None
@@ -222,13 +300,29 @@ class DebateInferenceServer:
             self.model_id,
             revision=revision,
             quantization_config=bnb_config,
-            dtype=torch.float16,
+            dtype=load_dtype,
             device_map="auto",
         )
         self.mdl.eval()
+        if use_4bit:
+            if not getattr(self.mdl, "is_loaded_in_4bit", False):
+                raise RuntimeError(
+                    f"{self.model_id} was configured for NF4 but did not load in 4-bit"
+                )
+            actual_precision = "nf4-4bit"
+        else:
+            actual_precision = _dtype_precision(self.mdl.dtype)
+
+        expected_precision = str(policy["precision"])
+        if actual_precision != expected_precision:
+            raise RuntimeError(
+                f"{self.model_id} loaded as {actual_precision}, expected "
+                f"{expected_precision}"
+            )
+        self.precision = actual_precision
 
     @modal.method()
-    def generate(self, prompt: str, max_new_tokens: int = 220) -> str:
+    def generate(self, prompt: str, max_new_tokens: int = 220) -> dict[str, str]:
         """Generate a single completion for one debate model turn.
 
         Args:
@@ -236,7 +330,7 @@ class DebateInferenceServer:
             max_new_tokens: Token budget for this generation step.
 
         Returns:
-            The generated completion text (decoded, no prompt echo).
+            The decoded completion and the worker-verified load precision.
         """
         import torch
 
@@ -276,28 +370,48 @@ class DebateInferenceServer:
             )
 
         gen_ids = out_ids[0, prompt_len:]
-        return self.tok.decode(gen_ids, skip_special_tokens=True).strip()
+        text = self.tok.decode(gen_ids, skip_special_tokens=True).strip()
+        return {"text": text, "quantization": self.precision}
 
     @modal.method()
-    def judge(self, prompt: str, response: str, max_new_tokens: int = 48) -> str:
+    def judge(
+        self, prompt: str, response: str, max_new_tokens: int = 48
+    ) -> dict[str, str]:
         """Classify one (prompt, response) pair with this container's judge model.
 
         Applies the judge's OWN moderation chat template (the whole reason the
-        /judge endpoint exists — Granite Guardian needs guardian_config, and
-        Qwen3Guard moderates the conversation turns directly). Decoding is
+        /judge endpoint exists — Granite Guardian needs guardian_config,
+        Qwen3Guard moderates the conversation turns directly, and NemoGuard
+        takes a single pre-rendered classification user message). Decoding is
         greedy: judge verdicts must be deterministic.
 
-        Returns the raw completion text; the caller parses the verdict
-        (judges.py parse_qwen3guard / parse_granite_guardian).
+        Returns the raw completion and worker-verified load precision; the
+        caller parses the verdict (judges.py parse_qwen3guard /
+        parse_granite_guardian / parse_nemotron_guard).
         """
         import torch
 
         mid = self.model_id.lower()
-        messages = [
-            {"role": "user", "content": prompt},
-            {"role": "assistant", "content": response},
-        ]
-        if "granite-guardian" in mid:
+        if "nemotron-safety-guard" in mid:
+            # NemoGuard expects ONE user message whose content is the fully
+            # rendered classification prompt (taxonomy + conversation + output
+            # instruction). build_nemotron_guard_prompt is the single source of
+            # truth for that string (judges.py), kept byte-exact with the
+            # model's own inference_script. We then apply the tokenizer's
+            # (Llama-3.1) chat template with add_generation_prompt=True.
+            from judges import build_nemotron_guard_prompt
+
+            rendered = build_nemotron_guard_prompt(prompt, response)
+            enc_text = self.tok.apply_chat_template(
+                [{"role": "user", "content": rendered}],
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        elif "granite-guardian" in mid:
+            messages = [
+                {"role": "user", "content": prompt},
+                {"role": "assistant", "content": response},
+            ]
             # Granite Guardian templates take the risk definition via
             # guardian_config; "harm" is the umbrella social-harm risk.
             enc_text = self.tok.apply_chat_template(
@@ -307,6 +421,10 @@ class DebateInferenceServer:
                 add_generation_prompt=True,
             )
         else:
+            messages = [
+                {"role": "user", "content": prompt},
+                {"role": "assistant", "content": response},
+            ]
             # Qwen3Guard-Gen: template formats the moderation request over the
             # conversation turns as-is.
             enc_text = self.tok.apply_chat_template(
@@ -327,7 +445,8 @@ class DebateInferenceServer:
             )
 
         gen_ids = out_ids[0, prompt_len:]
-        return self.tok.decode(gen_ids, skip_special_tokens=True).strip()
+        text = self.tok.decode(gen_ids, skip_special_tokens=True).strip()
+        return {"text": text, "quantization": self.precision}
 
 
 # ---------------------------------------------------------------------------
@@ -336,7 +455,7 @@ class DebateInferenceServer:
 #
 # Clients send:  POST MODAL_ENDPOINT  {"model": "...", "prompt": "...", "max_new_tokens": 220}
 #                with header           Authorization: Bearer <QUANTSAFE_MODAL_TOKEN>
-# This returns:                        {"text": "...", "quantization": "nf4-4bit" | "fp16"}
+# This returns:                        {"text": "...", "quantization": "<actual precision>"}
 # Errors:        fastapi.HTTPException -> {"detail": "..."} with 401 (auth) / 400 (input).
 #
 # The @modal.fastapi_endpoint label becomes the URL path suffix printed by `modal deploy`.
@@ -412,7 +531,7 @@ def generate_endpoint(
         }
 
     Response JSON (HTTP 200):
-        {"text": "<completion>", "quantization": "nf4-4bit" | "fp16"}
+        {"text": "<completion>", "quantization": "<actual precision>"}
 
     Error responses (fastapi.HTTPException, body {"detail": "<message>"}):
         401  secret unset, or Authorization bearer token missing/mismatched
@@ -431,8 +550,7 @@ def generate_endpoint(
         )
 
     server = DebateInferenceServer(model_id=model_id)
-    text = server.generate.remote(prompt, max_new_tokens)
-    return {"text": text, "quantization": _quantization_for(model_id)}
+    return server.generate.remote(prompt, max_new_tokens)
 
 
 @app.function(secrets=[modal.Secret.from_name("quantsafe-auth")])
@@ -452,7 +570,7 @@ def judge_endpoint(
         }
 
     Response JSON (HTTP 200):
-        {"text": "<raw judge completion>", "quantization": "fp16"}
+        {"text": "<raw judge completion>", "quantization": "<actual precision>"}
 
     The raw completion is returned untouched; verdict parsing lives client-side
     in judges.py (parse_qwen3guard / parse_granite_guardian) so the parsing
@@ -474,5 +592,4 @@ def judge_endpoint(
         )
 
     server = DebateInferenceServer(model_id=model_id)
-    text = server.judge.remote(prompt, response, max_new_tokens)
-    return {"text": text, "quantization": _quantization_for(model_id)}
+    return server.judge.remote(prompt, response, max_new_tokens)
