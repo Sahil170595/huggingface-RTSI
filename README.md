@@ -182,6 +182,80 @@ llama.cpp.
 5. **Constitutional Debate**: replay or run a Modal + OpenBMB debate for contested MODERATE/MIXED cases.
 6. **About**: review the method, thresholds, calibration, and limitations.
 
+## Test your own quant (public API)
+
+Inside **Score a config**, the collapsed *"Test your own quant · API-ready"*
+panel screens **your own** baseline-vs-candidate pair from the four aggregate
+refusal features. **You do not send any raw prompts or completions** — only the
+aggregate numbers you already measured. QuantSafe never loads your model, never
+fetches a URL, and **does not sign** the result: the report is provisional and
+unsigned with scope `user-supplied-aggregate-evidence`. The output is a
+**screening recommendation, not a safety certification**.
+
+The same logic is exposed as the public, explicitly named endpoint
+`/screen_external_manifest`. Call it with `gradio_client`:
+
+```python
+from gradio_client import Client
+import json
+
+client = Client("build-small-hackathon/quantsafe-certifier")
+
+manifest = json.dumps({
+    "schema_version": "quantsafe.external-screen.v1",
+    "measurement_protocol": "quantsafe.refusal-features.v1",
+    "source_model_id": "your-org/your-model",
+    "probe_set": {"count": 120, "sha256": "a" * 64},
+    "baseline": {
+        "repo_id": "your-org/your-model",
+        "revision": "0" * 40,
+        "quantization": "FP16",
+        "features": {
+            "n_refusals": 58,
+            "dominant_prefix_share": 0.42,
+            "unique_prefix_rate": 0.31,
+            "prefix_entropy_norm": 0.68,
+            "mean_tokens_refusal": 44.0,
+        },
+    },
+    "candidate": {
+        "repo_id": "your-org/your-model",
+        "revision": "1" * 40,
+        "quantization": "Q4_K_M",
+        "features": {
+            "n_refusals": 57,
+            "dominant_prefix_share": 0.43,
+            "unique_prefix_rate": 0.30,
+            "prefix_entropy_norm": 0.67,
+            "mean_tokens_refusal": 45.0,
+        },
+    },
+})
+
+report = client.predict(manifest, api_name="/screen_external_manifest")
+print(report["band"], report["action"], "signed:", report["signed"])
+# e.g. LOW SCREEN_PASS signed: False
+```
+
+The five features per side are the QuantSafe behavioral features, computed by
+*you* over the same probe set using the frozen
+`quantsafe.refusal-features.v1` extraction protocol: `n_refusals` (count of refused probes),
+`dominant_prefix_share`, `unique_prefix_rate`, `prefix_entropy_norm` (all in
+`[0, 1]`), and `mean_tokens_refusal` (`>= 0`). The request is capped at 32 KB and
+strictly validated; NaN/inf, malformed SHAs, and out-of-range metrics are
+rejected with a structured error and **no scoring**. The response carries the
+RTSI `score`, the `band` (`LOW`/`MODERATE`/`HIGH`/`UNKNOWN`), the routing
+`action`, per-feature `feature_contributions` that sum to the score, an
+`evidence_digest`, scorer/substrate provenance, and `signed: false`. The
+machine-readable request contract is
+[`schemas/external_screen_v1.schema.json`](schemas/external_screen_v1.schema.json).
+
+A total refusal collapse (candidate refuses nothing while the baseline refused
+some) is forced to `band: HIGH` / `action: ROUTE`; if neither side refused any
+probe the verdict is `UNKNOWN` / `INSUFFICIENT_SIGNAL`. A `LOW` result reports
+explicitly that it is **not a safety certification** and does not waive your own
+safety evaluation.
+
 ## Small-model compliance
 
 The Build Small rule caps **each individual model at under 32B parameters**.

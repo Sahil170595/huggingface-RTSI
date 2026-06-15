@@ -1,21 +1,21 @@
 """scripts/deploy_space.py — push the repo to the HF Space + set secrets.
 
-Uploads the working tree to the official Build Small organization Space
-(respecting .gitignore-style ignore patterns) and, when the corresponding
-environment variables are present, sets the Space secrets the app needs:
+Uploads a source directory to the official Build Small organization Space
+(using explicit ignore patterns). Secret synchronization is opt-in via
+``--sync-secrets`` so a source deploy cannot silently change production config.
 
     MODAL_ENDPOINT               -> live debate / live screen modal backend URL
     MODAL_TOKEN                  -> bearer token (matches Modal quantsafe-auth)
     OPENBMB_API_KEY              -> MiniCPM debate / benchmark provider key
     GRADIO_CERT_SIGNING_KEY_HEX  -> stable Ed25519 issuer key across restarts
-    HF_TOKEN                     -> for gated/Inference-Provider model access
+    SPACE_RUNTIME_HF_TOKEN       -> HF_TOKEN inside the Space runtime
 
 Usage (PowerShell):
     # The active Hugging Face token must have write access to build-small-hackathon.
     $env:MODAL_ENDPOINT = "https://sahilkadadekar--generate.modal.run"
     $env:MODAL_TOKEN    = "<token>"
-    python scripts/deploy_space.py            # upload + set whatever secrets are in env
-    python scripts/deploy_space.py --no-upload  # only set secrets
+    python scripts/deploy_space.py
+    python scripts/deploy_space.py --sync-secrets --no-upload
 """
 from __future__ import annotations
 
@@ -37,6 +37,11 @@ IGNORE = [
     ".pytest_cache/*",
     ".mypy_cache/*",
     ".benchmarks/*",
+    ".venv/*",
+    ".cache/*",
+    "transformers_cache/*",
+    "hf_cache/*",
+    ".DS_Store",
     # SECURITY: never upload local secret material to the public Space.
     ".modal_token_local.txt",
     ".cert_key_local.txt",
@@ -44,7 +49,7 @@ IGNORE = [
     "*.pem",
     ".playwright-mcp/*",
     ".playwright-cli/*",
-    "quantsafe-live.png",
+    "quantsafe-live*.png",
     ".history/*",
     ".ruff_cache/*",
     "output/*",
@@ -75,29 +80,38 @@ IGNORE = [
 ]
 
 # Secrets to mirror into the Space when present in the local environment.
-SECRET_ENV_VARS = [
-    "MODAL_ENDPOINT",
-    "MODAL_TOKEN",
-    "OPENBMB_API_KEY",
-    "GRADIO_CERT_SIGNING_KEY_HEX",
-    "HF_TOKEN",
-]
+SECRET_ENV_VARS = {
+    "MODAL_ENDPOINT": "MODAL_ENDPOINT",
+    "MODAL_TOKEN": "MODAL_TOKEN",
+    "OPENBMB_API_KEY": "OPENBMB_API_KEY",
+    "GRADIO_CERT_SIGNING_KEY_HEX": "GRADIO_CERT_SIGNING_KEY_HEX",
+    # Never mirror the CLI/deployment HF_TOKEN into the public runtime.
+    "SPACE_RUNTIME_HF_TOKEN": "HF_TOKEN",
+}
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-upload", action="store_true", help="only set secrets")
+    ap.add_argument(
+        "--sync-secrets",
+        action="store_true",
+        help="explicitly synchronize configured Space secrets from the environment",
+    )
     args = ap.parse_args()
 
     api = HfApi()
 
-    for name in SECRET_ENV_VARS:
-        val = os.environ.get(name)
-        if not val:
-            print(f"  (skip secret {name}: not in env)")
-            continue
-        api.add_space_secret(repo_id=REPO_ID, key=name, value=val)
-        print(f"  set Space secret {name} ({len(val)} chars)")
+    if args.sync_secrets:
+        for env_name, secret_name in SECRET_ENV_VARS.items():
+            val = os.environ.get(env_name)
+            if not val:
+                print(f"  (skip secret {secret_name}: {env_name} not in env)")
+                continue
+            api.add_space_secret(repo_id=REPO_ID, key=secret_name, value=val)
+            print(f"  set Space secret {secret_name} ({len(val)} chars)")
+    else:
+        print("  secrets unchanged (pass --sync-secrets to update them)")
 
     if not args.no_upload:
         print(f"Uploading working tree to {REPO_ID} ...")

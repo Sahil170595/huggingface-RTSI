@@ -24,3 +24,4 @@ HACKATHON_BRIEF.md
 .ruff_cache/
 output/
 scripts/_prospective_cache/
+quantsafe-live*.png
