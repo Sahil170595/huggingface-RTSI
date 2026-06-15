@@ -6,6 +6,7 @@ environment variables are present, sets the Space secrets the app needs:
 
     MODAL_ENDPOINT               -> live debate / live screen modal backend URL
     MODAL_TOKEN                  -> bearer token (matches Modal quantsafe-auth)
+    OPENBMB_API_KEY              -> MiniCPM debate / benchmark provider key
     GRADIO_CERT_SIGNING_KEY_HEX  -> stable Ed25519 issuer key across restarts
     HF_TOKEN                     -> for gated/Inference-Provider model access
 
@@ -43,6 +44,7 @@ IGNORE = [
     "*.pem",
     ".playwright-mcp/*",
     ".playwright-cli/*",
+    "quantsafe-live.png",
     ".history/*",
     ".ruff_cache/*",
     "output/*",
