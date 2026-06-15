@@ -34,3 +34,47 @@ jobs:
           app.py attestation.py cert_signer.py debate.py features.py inference.py
           judges.py modal_app.py model_revisions.py rtsi_core.py semantic_refusal.py
           validation.py scripts
+
+  smoke-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install CPU torch first (avoids CUDA wheel download)
+        # Install the CPU-only torch wheel before requirements.txt so pip's
+        # dependency resolver sees torch==2.11.0+cpu as already satisfied and
+        # does not pull the much larger CUDA wheel when processing requirements.txt.
+        run: >-
+          pip install --upgrade pip &&
+          pip install torch==2.11.0
+          --index-url https://download.pytorch.org/whl/cpu
+      - name: Install full runtime dependencies
+        # --extra-index-url keeps the CPU wheel index visible so any torch
+        # transitive dep (torchvision, etc.) also resolves to CPU builds.
+        run: >-
+          pip install -r requirements.txt
+          --extra-index-url https://download.pytorch.org/whl/cpu
+      - name: Import smoke — pinned runtime stack
+        # Verifies that the pinned transformers/torch/accelerate/huggingface_hub
+        # versions are mutually compatible and that every public module imports
+        # cleanly under the full requirements.txt stack.
+        #
+        # modal_app is intentionally excluded: it imports `modal` and `fastapi`
+        # at module level, and neither package is in requirements.txt (they are
+        # deploy-side extras installed separately on the Modal deploy machine).
+        # Importing modal_app here would fail with ModuleNotFoundError for `modal`.
+        #
+        # app.py IS included: its spaces import has a no-op shim for non-HF
+        # environments, demo.launch() is guarded under `if __name__ == "__main__"`,
+        # substrate JSON files are committed to the repo, and cert_signer generates
+        # an ephemeral key when GRADIO_CERT_SIGNING_KEY_HEX is absent — all safe
+        # on headless CI.
+        run: >-
+          python -c "import features, rtsi_core, validation, attestation,
+          cert_signer, model_revisions, judges, semantic_refusal, debate,
+          inference, app"

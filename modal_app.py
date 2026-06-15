@@ -109,9 +109,8 @@ DEBATE_MODELS: set[str] = {
     "Qwen/Qwen2.5-0.5B-Instruct",
     "mistralai/Mistral-7B-Instruct-v0.3",
     "HuggingFaceTB/SmolLM2-1.7B-Instruct",
-    # 2025/26-generation cohort (current debate trio — three distinct families)
+    # Current Modal side of the hybrid debate cohort.
     "Qwen/Qwen3-8B",
-    "microsoft/Phi-4-mini-instruct",
     "HuggingFaceTB/SmolLM3-3B",
 }
 
@@ -160,11 +159,6 @@ MODEL_LOAD_POLICIES: dict[str, dict[str, object]] = {
         "load_in_4bit": False,
     },
     "Qwen/Qwen3-8B": {
-        "precision": "fp16",
-        "torch_dtype": "float16",
-        "load_in_4bit": False,
-    },
-    "microsoft/Phi-4-mini-instruct": {
         "precision": "fp16",
         "torch_dtype": "float16",
         "load_in_4bit": False,
@@ -221,7 +215,7 @@ _image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install(
         "torch==2.11.0",
-        # Current v5 ships Qwen3 (enable_thinking), SmolLM3, Phi-4-mini,
+        # Current v5 ships Qwen3 (enable_thinking), SmolLM3,
         # Qwen3Guard-Gen and Granite-Guardian-3.3 chat templates.
         "transformers==5.12.0",
         "accelerate==1.14.0",
@@ -295,7 +289,10 @@ class DebateInferenceServer:
         )
 
         revision = model_revision(self.model_id)
-        self.tok = AutoTokenizer.from_pretrained(self.model_id, revision=revision)
+        self.tok = AutoTokenizer.from_pretrained(
+            self.model_id,
+            revision=revision,
+        )
         self.mdl = AutoModelForCausalLM.from_pretrained(
             self.model_id,
             revision=revision,

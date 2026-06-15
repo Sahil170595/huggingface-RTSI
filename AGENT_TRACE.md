@@ -35,7 +35,9 @@ This is a high-level, reviewable action trace for the final audit pass. It recor
 - Browser console: no application errors after the font fix
 - Desktop and mobile Gradio flows checked with Playwright
 - Authenticated Modal smoke: Qwen2.5-0.5B returned `OK` in 7.7 seconds; unauthenticated request returned HTTP 401
-- Public Space live debate: three models, two rounds, `CONDITIONAL` consensus in 34.8 seconds
+- Historical public Space live debate at that stage: three models, two rounds,
+  `CONDITIONAL` consensus in 34.8 seconds. The final OpenBMB section below
+  records the superseding cohort and result.
 - Public Space walkthrough recorded at 1280x720: `demo/quantsafe-demo.webm` (68.96 seconds)
 - Final Space transferred into the official `build-small-hackathon` organization with secrets preserved
 
@@ -331,3 +333,74 @@ private reasoning.
 
 OpenAI Codex performed this evidence-hardening pass in collaboration with the
 repository owner.
+
+---
+
+# Final Adversarial-Hardening + External-Validation Pass
+
+June 15, 2026.
+
+- Multi-agent adversarial audit (baseline 74/100) re-verified on the main thread before acceptance.
+- Floor integrity/compliance fixes: validation reframing to lead with the 0.8403 family-held-out AUC (primary generalization claim) + explicit in-sample==LOOCV disclosure; project-label qualifiers added throughout; demo-duration corrected to 35.7 s; personal-path and internal-codename strings scrubbed from substrate JSONs; deploy ignore-list leak closed.
+- Real debate band-gating enforced in code (clear HIGH configs route without consuming an agent round).
+- External-labeled judge benchmark added: PKU-Alignment/BeaverTails 30k_test, N=400, seed 20260615, third-party human crowd labels; Qwen3Guard-Gen-0.6B 84.0% [80.1–87.3] F1 0.854 cov 96.8%; Granite-Guardian-3.3-8B 84.75% [80.9–87.9] F1 0.847 cov 100%; Nemotron-Safety-Guard-8B-v3 81.0% [76.9–84.5] F1 0.808 cov 100%; unanimous 89.76% [86.0–92.6] at 83% coverage; results in `substrate/external_judge_eval.json`.
+- Prospective NF4 transfer demonstration added: frozen 45-cell substrate scored blind against two new families under NF4 4-bit (bitsandbytes) on-the-fly quant, 100 AdvBench probes; Falcon3-3B-Instruct (TII) RTSI 0.0018 LOW, no material loss; SmolLM2-1.7B-Instruct (HuggingFaceTB) RTSI 0.2408 MODERATE, −10 pp refusal-rate drop, material_loss True; results in `substrate/prospective_validation.json`.
+- MiniCPM4.1-8B local transformers incompatibility documented at that stage.
+  This was later superseded by the official hosted OpenBMB integration recorded
+  below; no runtime downgrade was required.
+- CI smoke job added: installs full pinned requirements.txt (CPU torch) and imports entire runtime stack; a transformers/torch API break at the pinned versions now fails CI.
+- UI evidence wiring: Cross-Vendor benchmark panel and Prospective transfer panel added to the Judge Agreement tab; judges' TL;DR panel added for at-a-glance summary.
+
+Owner + Claude + OpenAI Codex, collaborative pass.
+
+---
+
+# OpenBMB Integration + Final Evidence-Reconciliation Pass
+
+June 15, 2026.
+
+## Scope
+
+- Re-read the live artifacts, public documentation, submission checklist, demo,
+  deployment code, and sponsor rules as one release surface.
+- Kept this trace public in all three requested locations: GitHub, the
+  organization Space, and the Hub trace dataset.
+
+## Changes
+
+- Integrated the official OpenBMB Build Small API through a secret-backed,
+  OpenAI-compatible client. No API key or raw completion is stored in source,
+  artifacts, logs, or this trace.
+- Evaluated MiniCPM4.1-8B on the identical deterministic BeaverTails
+  `30k_test` sample used by the three specialist guards (N=400, seed 20260615):
+  74.5% accuracy, 0.742 macro-F1, 100% coverage. Raw-output count and SHA-256
+  digest are recorded; raw completions are not published.
+- Preserved the three purpose-built guards as the selective-consensus cohort:
+  89.76% accuracy at 83% coverage. MiniCPM is presented separately as a
+  general-reasoning moderation cross-check.
+- Replaced the failed local MiniCPM loader path with the sponsor-hosted runtime
+  and removed MiniCPM from Modal's allowlist and loading policies.
+- Regenerated the real cached constitutional debate across Modal and OpenBMB:
+  Qwen3-8B, MiniCPM4.1-8B, and SmolLM3-3B completed two rounds in 49.286 s.
+  The final result was ROUTE at 2/3 agreement. MiniCPM changed from DEPLOY to
+  ROUTE after critique and joined the final majority.
+- Reconciled the README, submission checklist, field notes, benchmark dataset
+  publisher, Space UI, and demo copy with those measured artifacts. Removed the
+  stale claim that MiniCPM was excluded and softened the n=2 NF4 demonstration
+  so it is not presented as established threshold transfer.
+- Added `sponsor:openbmb`, the pinned MiniCPM Hub reference, explicit
+  provider-revision limitation, and the hybrid provider split.
+
+## Verification
+
+- The official API reported model `MiniCPM4.1-8B`; the Hub reference revision
+  is `3a8dfed9c79a45e07dbff95bcd49d792343fa1a3`.
+- The published external artifact records MiniCPM's raw-output digest as
+  `297b9e994e4e5c142fb8c4a2591611bcfa8b8acad03b49a3d47364dfa7ef0e86`.
+- Release gate: `477 passed`; Ruff, `git diff --check`, compileall, Bandit
+  medium/high scan, and pip-audit (one documented PyTorch exception) passed.
+- Desktop and 390x844 mobile browser passes confirmed the six-tab navigation,
+  external four-model benchmark, cached hybrid debate, and editorial contrast.
+- The judge benchmark dataset was republished with the external-label artifact;
+  the public agent-trace dataset was synchronized in Hub commit
+  `c8ed33032ff4c2ca559b05e60c4923b6ccd0b3be`.

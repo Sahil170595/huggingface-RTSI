@@ -6,6 +6,7 @@ environment variables are present, sets the Space secrets the app needs:
 
     MODAL_ENDPOINT               -> live debate / live screen modal backend URL
     MODAL_TOKEN                  -> bearer token (matches Modal quantsafe-auth)
+    OPENBMB_API_KEY              -> MiniCPM debate / benchmark provider key
     GRADIO_CERT_SIGNING_KEY_HEX  -> stable Ed25519 issuer key across restarts
     HF_TOKEN                     -> for gated/Inference-Provider model access
 
@@ -43,9 +44,15 @@ IGNORE = [
     "*.pem",
     ".playwright-mcp/*",
     ".playwright-cli/*",
+    "quantsafe-live.png",
     ".history/*",
     ".ruff_cache/*",
     "output/*",
+    "scripts/_prospective_cache/*",  # raw model completions to harmful probes — never publish
+    # SECURITY: internal competitive-strategy docs never ship in the Space.
+    # AGENT_TRACE.md is intentionally public for the Sharing is Caring badge.
+    "HACKATHON_BRIEF.md",
+    "HACKATHON_ORG_PAGE.md",
     # The org token can commit source but cannot negotiate LFS uploads. Demo
     # media is uploaded separately through the authenticated Hugging Face UI.
     "demo/*.mp4",
@@ -60,12 +67,18 @@ IGNORE = [
     "scripts/train_refusal_classifier.py",
     "scripts/publish_judge_benchmark.py",
     "scripts/publish_release_warnings.py",
+    # research/eval scripts — not part of the running Space app
+    "scripts/eval_external_judges.py",
+    "scripts/eval_openbmb_minicpm.py",
+    "scripts/prospective_modal.py",
+    "scripts/prospective_score.py",
 ]
 
 # Secrets to mirror into the Space when present in the local environment.
 SECRET_ENV_VARS = [
     "MODAL_ENDPOINT",
     "MODAL_TOKEN",
+    "OPENBMB_API_KEY",
     "GRADIO_CERT_SIGNING_KEY_HEX",
     "HF_TOKEN",
 ]

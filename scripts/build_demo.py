@@ -124,7 +124,7 @@ def close_slide() -> Image.Image:
         ("45", "measured quantization cells"),
         ("34", "GGUF cells through llama.cpp / Ollama"),
         ("0.793", "Fleiss' kappa across three guard-model families"),
-        ("95.0%", "Nemotron's point estimate on the 40-item project corpus"),
+        ("74.5%", "MiniCPM cross-check on 400 external human labels"),
     ]
     y = 255
     for metric, label in rows:
@@ -136,7 +136,7 @@ def close_slide() -> Image.Image:
     draw.rounded_rectangle((206, 512, 1074, 590), radius=12,
                            fill=(236, 240, 234), outline=SAGE, width=2)
     draw.text((W // 2, 533),
-              "Nemotron | Modal | Codex | llama.cpp | Ed25519 | arXiv:2606.10154",
+              "OpenBMB MiniCPM | Nemotron | Modal | Codex | llama.cpp | Ed25519",
               font=font(FONT_BOLD, 20), fill=(54, 75, 56), anchor="ma")
     draw.text((W // 2, 627),
               "huggingface.co/spaces/build-small-hackathon/quantsafe-certifier",
@@ -160,8 +160,8 @@ SLIDES = [
     ),
     (
         "03-nemotron.png", 4.80, "03 / CROSS-CHECK",
-        "Three guard-model families expose where the evidence splits.",
-        "Nemotron has the highest point estimate: 95% on this 40-item project-labeled corpus.",
+        "Specialist guards plus MiniCPM expose the evidence boundary.",
+        "MiniCPM scored 74.5% on 400 external human labels and joins the live contested-case debate.",
     ),
     (
         "04-certificate.png", 4.50, "04 / BIND",

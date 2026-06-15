@@ -1,0 +1,171 @@
+{
+  "dataset": "PKU-Alignment/BeaverTails",
+  "dataset_revision": "8401fe609d288129cc684a9b3be6a93e41cfe678",
+  "split": "30k_test",
+  "sample_size": 400,
+  "corpus_sha256": "c5e4c69b0debf8bfc8c14cab6b610fd749c7724804b82587bdb4ca26d5bb3c84",
+  "seed": 20260615,
+  "label_source": "BeaverTails human crowd labels",
+  "per_judge": [
+    {
+      "model": "Qwen/Qwen3Guard-Gen-0.6B",
+      "family": "qwen3guard",
+      "metrics": {
+        "n_items": 400,
+        "n_correct": 336,
+        "accuracy": 0.84,
+        "accuracy_ci_low": 0.8008643954521164,
+        "accuracy_ci_high": 0.8726672444005619,
+        "macro_f1": 0.853907259106174,
+        "coverage": 0.9675,
+        "per_class": {
+          "safe": {
+            "precision": 0.8802083333333334,
+            "recall": 0.845,
+            "f1": 0.8622448979591837,
+            "support": 200
+          },
+          "unsafe": {
+            "precision": 0.8564102564102564,
+            "recall": 0.835,
+            "f1": 0.8455696202531644,
+            "support": 200
+          }
+        }
+      },
+      "counts": {
+        "safe": 192,
+        "unsafe": 195,
+        "unclear": 13
+      }
+    },
+    {
+      "model": "ibm-granite/granite-guardian-3.3-8b",
+      "family": "granite-guardian",
+      "metrics": {
+        "n_items": 400,
+        "n_correct": 339,
+        "accuracy": 0.8475,
+        "accuracy_ci_low": 0.8089761434535727,
+        "accuracy_ci_high": 0.8794128119840912,
+        "macro_f1": 0.8473845845920978,
+        "coverage": 1.0,
+        "per_class": {
+          "safe": {
+            "precision": 0.8293838862559242,
+            "recall": 0.875,
+            "f1": 0.8515815085158152,
+            "support": 200
+          },
+          "unsafe": {
+            "precision": 0.8677248677248677,
+            "recall": 0.82,
+            "f1": 0.8431876606683804,
+            "support": 200
+          }
+        }
+      },
+      "counts": {
+        "safe": 211,
+        "unsafe": 189,
+        "unclear": 0
+      }
+    },
+    {
+      "model": "nvidia/Llama-3.1-Nemotron-Safety-Guard-8B-v3",
+      "family": "nemotron-safety-guard",
+      "metrics": {
+        "n_items": 400,
+        "n_correct": 324,
+        "accuracy": 0.81,
+        "accuracy_ci_low": 0.7686762283551013,
+        "accuracy_ci_high": 0.845426149157635,
+        "macro_f1": 0.8084484323016432,
+        "coverage": 1.0,
+        "per_class": {
+          "safe": {
+            "precision": 0.7627118644067796,
+            "recall": 0.9,
+            "f1": 0.8256880733944953,
+            "support": 200
+          },
+          "unsafe": {
+            "precision": 0.8780487804878049,
+            "recall": 0.72,
+            "f1": 0.7912087912087912,
+            "support": 200
+          }
+        }
+      },
+      "counts": {
+        "safe": 236,
+        "unsafe": 164,
+        "unclear": 0
+      }
+    },
+    {
+      "model": "openbmb/MiniCPM4.1-8B",
+      "family": "minicpm",
+      "role": "general-reasoning moderation cross-check",
+      "metrics": {
+        "n_items": 400,
+        "n_correct": 298,
+        "accuracy": 0.745,
+        "accuracy_ci_low": 0.7000956766555838,
+        "accuracy_ci_high": 0.785243299120611,
+        "macro_f1": 0.7415824276050772,
+        "coverage": 1.0,
+        "per_class": {
+          "safe": {
+            "precision": 0.6991869918699187,
+            "recall": 0.86,
+            "f1": 0.7713004484304934,
+            "support": 200
+          },
+          "unsafe": {
+            "precision": 0.8181818181818182,
+            "recall": 0.63,
+            "f1": 0.711864406779661,
+            "support": 200
+          }
+        }
+      },
+      "counts": {
+        "safe": 246,
+        "unsafe": 154,
+        "unclear": 0
+      }
+    }
+  ],
+  "cohort_selective": {
+    "n_items": 400,
+    "n_covered": 332,
+    "n_correct": 298,
+    "coverage": 0.83,
+    "accuracy": 0.8975903614457831,
+    "accuracy_ci_low": 0.8602994566259493,
+    "accuracy_ci_high": 0.9257857424052688
+  },
+  "generated_at": "2026-06-15T08:35:08Z",
+  "cohort_model_ids": [
+    "Qwen/Qwen3Guard-Gen-0.6B",
+    "ibm-granite/granite-guardian-3.3-8b",
+    "nvidia/Llama-3.1-Nemotron-Safety-Guard-8B-v3"
+  ],
+  "cohort_note": "cohort_selective covers the three specialist guard models only; MiniCPM is reported as a separate reasoning-model cross-check",
+  "minicpm_runtime": {
+    "provider": "OpenBMB Build Small hosted API",
+    "provider_model": "MiniCPM4.1-8B",
+    "hub_reference": "openbmb/MiniCPM4.1-8B",
+    "hub_reference_revision": "3a8dfed9c79a45e07dbff95bcd49d792343fa1a3",
+    "provider_revision": "unreported",
+    "transport_security": "Sponsor-published shared hackathon endpoint is HTTP-only; credential is the shared challenge token, not a user token.",
+    "temperature": 0.0,
+    "max_tokens": 64,
+    "thinking": false,
+    "raw_outputs_published": false,
+    "raw_output_count": 400,
+    "raw_output_sha256": "297b9e994e4e5c142fb8c4a2591611bcfa8b8acad03b49a3d47364dfa7ef0e86"
+  },
+  "supplemented_at": "2026-06-15T09:29:35.335687+00:00"
+}

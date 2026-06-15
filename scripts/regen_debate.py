@@ -1,8 +1,8 @@
 """scripts/regen_debate.py — regenerate the cached Constitutional Debate.
 
 Runs the current production debate cohort (app.LIVE_DEBATE_MODELS, three
-distinct model families) on the deployed Modal GPU backend and overwrites
-substrate/debate_examples.json with the real transcript + consensus.
+distinct model families) across Modal and the official OpenBMB MiniCPM API,
+then overwrites substrate/debate_examples.json with the real transcript.
 
 Why three models: an odd cohort always yields a strict majority, so the
 consensus is genuine (2-1 or 3-0) rather than a 1-1 tie resolved by the
@@ -14,10 +14,11 @@ well-calibrated MODERATE-band scenario); only the debaters change.
 Usage (PowerShell):
     $env:MODAL_ENDPOINT = "https://<workspace>--debate-generate.modal.run"
     $env:MODAL_TOKEN    = "<the quantsafe-auth token>"
+    $env:OPENBMB_API_KEY = "<the Build Small OpenBMB key>"
     python scripts/regen_debate.py
 
 Writes substrate/debate_examples.json on success. Exits non-zero (leaving the
-existing cache untouched) if the Modal backend errors or the result looks
+existing cache untouched) if either provider errors or the result looks
 degenerate (every model failed to generate).
 """
 from __future__ import annotations
@@ -53,6 +54,10 @@ def main() -> int:
             "MODAL_ENDPOINT is not set. Deploy modal_app.py and export the "
             "/generate URL first (see modal_app.py runbook)."
         )
+    if not os.environ.get("OPENBMB_API_KEY"):
+        raise SystemExit(
+            "OPENBMB_API_KEY is not set. Export the Build Small MiniCPM API key."
+        )
 
     question = _load_existing_question()
     models = list(app.LIVE_DEBATE_MODELS)
@@ -63,19 +68,24 @@ def main() -> int:
     result = debate.run_debate(
         question,
         models,
-        backend="modal",
+        backend="hybrid",
         rounds=ROUNDS,
+        band="MODERATE",
         on_event=lambda ev: print(
             f"  [{ev.get('type')}] "
             + (f"{ev.get('model')} -> {ev.get('stance')}" if ev.get("type") == "model_response" else "")
         ),
     )
 
-    # Degeneracy guard: refuse to cache a transcript where every model errored.
+    # Integrity guard: a partial provider run is not a valid three-model debate.
     final = result["rounds"][-1]["responses"]
-    errored = sum(1 for r in final if r["text"].startswith("[generation error"))
-    if errored == len(final):
-        print("ERROR: every model failed to generate; cache left untouched.", file=sys.stderr)
+    errored = sum(1 for r in final if r.get("errored"))
+    if errored:
+        print(
+            f"ERROR: {errored}/{len(final)} final-round model calls failed; "
+            "cache left untouched.",
+            file=sys.stderr,
+        )
         return 1
 
     consensus = result["consensus"]

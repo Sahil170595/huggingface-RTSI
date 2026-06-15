@@ -87,7 +87,13 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="quantsafe-model-cards-") as tmp:
         for repo_id, warning in WARNINGS.items():
-            cached = Path(hf_hub_download(repo_id=repo_id, filename="README.md"))
+            # Deliberately read the live model card (default branch), not a pinned
+            # revision: this maintenance script adds/refreshes a warning block and
+            # re-uploads, so reading an immutable revision would clobber newer card
+            # edits. This is the one intentionally-mutable download in the repo;
+            # every model-weight load elsewhere pins an immutable SHA.
+            card = hf_hub_download(repo_id=repo_id, filename="README.md")  # nosec B615
+            cached = Path(card)
             updated = _replace_or_insert(cached.read_text(encoding="utf-8"), warning)
             target = Path(tmp) / repo_id.replace("/", "--") / "README.md"
             target.parent.mkdir(parents=True, exist_ok=True)

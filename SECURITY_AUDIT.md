@@ -27,7 +27,7 @@ and the live Hugging Face Space.
 
 ## Verification
 
-- 348 unit tests pass under Gradio 6.18.0 and Transformers 5.12.0.
+- The full suite (**477 tests**) passes under Gradio 6.18.0 and Transformers 5.12.0. A smoke-runtime CI job installs the full pinned requirements.txt (CPU torch) and imports the entire runtime stack, so a transformers/torch API break at the pinned versions fails CI.
 - `ruff check .` and `git diff --check` pass.
 - Bandit reports no medium- or high-severity findings.
 - Every public model revision and documentation link resolves.
@@ -47,4 +47,10 @@ surface. There is no newer patched PyTorch release available in the selected
 ZeroGPU stack, so CI records this explicit, scoped exception.
 
 Operational secrets remain outside the repository and Space upload:
-`GRADIO_CERT_SIGNING_KEY_HEX`, `MODAL_TOKEN`, `MODAL_ENDPOINT`, and `HF_TOKEN`.
+`GRADIO_CERT_SIGNING_KEY_HEX`, `MODAL_TOKEN`, `MODAL_ENDPOINT`,
+`OPENBMB_API_KEY`, and `HF_TOKEN`.
+
+The OpenBMB sponsor endpoint is published as HTTP-only and uses a shared
+hackathon token rather than a personal account credential. The transport
+limitation is documented in the benchmark artifact; no claim of TLS
+confidentiality is made.

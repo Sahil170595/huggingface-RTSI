@@ -1,5 +1,5 @@
 {
-  "experiment": "tr163_rtsi_gated_dtype_routing",
+  "experiment": "rtsi_refusal_drift_routing",
   "evaluation_mode": "in_sample",
   "n_cells": 45,
   "risk_distribution": {

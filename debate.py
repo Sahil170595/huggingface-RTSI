@@ -1,7 +1,7 @@
 """debate.py — backend-swappable multi-model Constitutional Debate.
 
 Several small models argue a CONTESTED safety-deployment question over rounds,
-then a simple majority consensus yields a verdict. Built to RUN now on the local
+then a 2/3-majority consensus yields a verdict. Built to RUN now on the local
 RTX 4080 (4-bit transformers on CUDA, free) and flip to bigger Modal models by a
 config/env change alone — NO code change needed to go live.
 
@@ -12,7 +12,7 @@ can land on different stances. Debating a foregone "deploy a config that lost 90
 points of refusal?" would always vote ROUTE and prove nothing; the debate exists
 to adjudicate real uncertainty.
 
-Three generation backends behind one `generate()` contract:
+Four generation backends behind one `generate()` contract:
   "local" transformers 4-bit (NF4) on CUDA, lazy-load+cache per model_id. The
           dev path for the 4080. Uses the GPU, never CPU.
   "modal" HTTP POST os.environ["MODAL_ENDPOINT"] {model, prompt, max_new_tokens}
@@ -20,6 +20,9 @@ Three generation backends behind one `generate()` contract:
           -> {"text": ..., "quantization": ...}; non-2xx carries a JSON
           {"detail": ...} surfaced as RuntimeError. The production path
           (bigger models).
+  "hybrid" routes OpenBMB MiniCPM4.1-8B to the official hosted MiniCPM API
+          and every other model to Modal. The public contested-case debate uses
+          this path so both providers perform real inference.
   "hf"    huggingface_hub InferenceClient.chat_completion. Present for
           completeness; NOT used now (HF Inference credits are dead).
 
@@ -27,9 +30,22 @@ Public API (the contract the engine and the tab code against):
   generate(model_id, prompt, backend="local", max_new_tokens=220) -> str
   CONSTITUTION  (module constant: the constitutional system instruction)
   run_debate(question, models, backend="local", rounds=2, max_new_tokens=220,
-             on_event=None) -> dict
+             on_event=None, band=None) -> dict
   consensus_label(consensus) -> {"label": "CONSENSUS"|"NO CONSENSUS",
              "explanation": str}  (pure UI labeling over the consensus dict)
+
+Band-gate contract (run_debate + run_live_debate):
+  band=None or band="MODERATE"/"MIXED"/"UNRELIABLE" -> full multi-round debate.
+  band="LOW"  -> short-circuit: returns immediately with routed_by_band=True,
+                 final_verdict=STANCE_DEPLOY, no generation performed.
+  band="HIGH" -> short-circuit: returns immediately with routed_by_band=True,
+                 final_verdict=STANCE_ROUTE, no generation performed.
+  Any unknown band value is treated as None (debate proceeds).
+
+consensus_kind field in compute_consensus output:
+  "unanimous"  — all final-round models agreed.
+  "majority"   — >= 2/3 agreed (but not all).
+  "tie-break"  — < 2/3 agreed; verdict from safety-first tie-break rule.
 """
 
 from __future__ import annotations
@@ -80,6 +96,19 @@ STANCES: tuple[str, ...] = (STANCE_DEPLOY, STANCE_ROUTE, STANCE_CONDITIONAL)
 # basis of an unreadable answer.
 DEFAULT_STANCE = STANCE_CONDITIONAL
 
+# ---------------------------------------------------------------------------
+# Band-gate constants — enforced by run_debate and callers.
+# ---------------------------------------------------------------------------
+
+# Risk bands that SKIP the full debate and return directly.
+#   LOW  -> DEPLOY: no material refusal-drift; debate would be a foregone
+#           conclusion. The cell routes through on a SCREEN PASS.
+#   HIGH -> ROUTE: clear danger signal; no debate can greenlight this.
+# Bands NOT in either set (MODERATE, MIXED, UNRELIABLE, UNKNOWN, None) fall
+# through to the full multi-round debate.
+BAND_SHORT_CIRCUIT_DEPLOY: frozenset[str] = frozenset({"LOW"})
+BAND_SHORT_CIRCUIT_ROUTE: frozenset[str] = frozenset({"HIGH"})
+
 # Round-type labels surfaced in the contract + on_event stream.
 ROUND_PROPOSE = "PROPOSE"
 ROUND_CRITIQUE = "CRITIQUE"
@@ -102,6 +131,7 @@ _MODAL_TIMEOUT_S = 300
 # so the UI can disclose what precision argued the debate. None until a modal
 # call succeeds, or when the endpoint omits the field.
 LAST_MODAL_QUANTIZATION: str | None = None
+OPENBMB_MINICPM_MODEL_ID = "openbmb/MiniCPM4.1-8B"
 
 
 # ---------------------------------------------------------------------------
@@ -369,6 +399,26 @@ def _generate_hf(model_id: str, prompt: str, max_new_tokens: int) -> str:
     return (result.choices[0].message.content or "").strip()
 
 
+def _generate_openbmb(model_id: str, prompt: str, max_new_tokens: int) -> str:
+    """Generate one constitutional-debate turn with hosted MiniCPM4.1-8B."""
+    if model_id != OPENBMB_MINICPM_MODEL_ID:
+        raise ValueError(
+            "The OpenBMB backend is restricted to "
+            f"{OPENBMB_MINICPM_MODEL_ID!r}."
+        )
+    from openbmb_client import chat
+
+    result = chat(
+        [
+            {"role": "system", "content": CONSTITUTION},
+            {"role": "user", "content": prompt},
+        ],
+        max_tokens=max_new_tokens,
+        temperature=0.0,
+    )
+    return str(result["text"]).strip()
+
+
 def generate(
     model_id: str,
     prompt: str,
@@ -380,7 +430,7 @@ def generate(
     Args:
         model_id:       HF model identifier, e.g. "Qwen/Qwen2.5-1.5B-Instruct".
         prompt:         The debate turn (question, or question + peer stances).
-        backend:        "local" (4-bit CUDA), "modal" (HTTP), or "hf" (dead).
+        backend:        "local", "modal", "openbmb", "hybrid", or "hf" (dead).
         max_new_tokens: Generation budget.
 
     Returns the generated text (the constitutional system frame is applied per
@@ -391,10 +441,17 @@ def generate(
         return _generate_local(model_id, prompt, max_new_tokens)
     if backend == "modal":
         return _generate_modal(model_id, prompt, max_new_tokens)
+    if backend == "openbmb":
+        return _generate_openbmb(model_id, prompt, max_new_tokens)
+    if backend == "hybrid":
+        if model_id == OPENBMB_MINICPM_MODEL_ID:
+            return _generate_openbmb(model_id, prompt, max_new_tokens)
+        return _generate_modal(model_id, prompt, max_new_tokens)
     if backend == "hf":
         return _generate_hf(model_id, prompt, max_new_tokens)
     raise ValueError(
-        f"Unknown backend {backend!r}. Choose 'local', 'modal', or 'hf'."
+        f"Unknown backend {backend!r}. Choose 'local', 'modal', 'openbmb', "
+        "'hybrid', or 'hf'."
     )
 
 
@@ -409,18 +466,46 @@ def compute_consensus(final_responses: list[dict]) -> dict:
         final_responses: the final round's responses, each {model, stance, text}.
 
     Returns:
-        {verdict, vote_breakdown:{stance:count}, agreement:float} where agreement
-        is the fraction of final-round responses that match the winning verdict.
+        {verdict, vote_breakdown:{stance:count}, agreement:float,
+         consensus_kind:str} where:
+          - agreement is the fraction of final-round responses that match the
+            winning verdict.
+          - consensus_kind is one of:
+              "unanimous"  — every voter agreed with the verdict.
+              "majority"   — at least 2/3 agreed (but not all).
+              "tie-break"  — below 2/3 agreement; verdict from the safety-first
+                             tie-break rule (ROUTE > CONDITIONAL > DEPLOY), NOT
+                             from genuine agreement.
         Ties break toward ROUTE > CONDITIONAL > DEPLOY (safety-first ordering).
     """
     vote_breakdown: dict[str, int] = {s: 0 for s in STANCES}
-    for resp in final_responses:
+    error_count = sum(bool(resp.get("errored")) for resp in final_responses)
+    valid_responses = [
+        resp for resp in final_responses if not bool(resp.get("errored"))
+    ]
+    for resp in valid_responses:
         stance = resp.get("stance", DEFAULT_STANCE)
         vote_breakdown[stance] = vote_breakdown.get(stance, 0) + 1
 
     total = sum(vote_breakdown.values())
+    if error_count:
+        return {
+            "verdict": STANCE_ROUTE,
+            "vote_breakdown": vote_breakdown,
+            "agreement": 0.0,
+            "consensus_kind": "provider-error",
+            "valid_votes": total,
+            "error_count": error_count,
+        }
     if total == 0:
-        return {"verdict": DEFAULT_STANCE, "vote_breakdown": vote_breakdown, "agreement": 0.0}
+        return {
+            "verdict": DEFAULT_STANCE,
+            "vote_breakdown": vote_breakdown,
+            "agreement": 0.0,
+            "consensus_kind": "tie-break",
+            "valid_votes": 0,
+            "error_count": 0,
+        }
 
     # Safety-first tie-break: prefer the more conservative stance on a tie.
     tie_rank = {STANCE_ROUTE: 0, STANCE_CONDITIONAL: 1, STANCE_DEPLOY: 2}
@@ -429,10 +514,22 @@ def compute_consensus(final_responses: list[dict]) -> dict:
         key=lambda s: (-vote_breakdown[s], tie_rank[s]),
     )
     agreement = vote_breakdown[verdict] / total
+
+    # Classify the quality of the agreement honestly.
+    if agreement == 1.0:
+        consensus_kind = "unanimous"
+    elif agreement >= CONSENSUS_AGREEMENT_THRESHOLD:
+        consensus_kind = "majority"
+    else:
+        consensus_kind = "tie-break"
+
     return {
         "verdict": verdict,
         "vote_breakdown": vote_breakdown,
         "agreement": agreement,
+        "consensus_kind": consensus_kind,
+        "valid_votes": total,
+        "error_count": 0,
     }
 
 
@@ -465,6 +562,15 @@ def consensus_label(consensus: dict) -> dict:
     """
     consensus = consensus or {}
     verdict = str(consensus.get("verdict", DEFAULT_STANCE))
+    if consensus.get("consensus_kind") == "provider-error":
+        return {
+            "label": LABEL_NO_CONSENSUS,
+            "explanation": (
+                f"{int(consensus.get('error_count', 0))} provider response(s) "
+                "failed. Failed turns were excluded from voting and the action "
+                "fails closed to ROUTE."
+            ),
+        }
     try:
         agreement = float(consensus.get("agreement", 0.0))
     except (TypeError, ValueError):
@@ -551,10 +657,16 @@ def run_debate(
     rounds: int = 2,
     max_new_tokens: int = _LOCAL_MAX_TOKENS,
     on_event: Callable[[dict], None] | None = None,
+    band: str | None = None,
 ) -> dict:
     """Run a multi-model Constitutional Debate and return the result contract.
 
     Flow:
+      Band gate (NEW): if ``band`` is a clear, non-contested band, the debate is
+        skipped entirely and a short-circuit result is returned immediately:
+          band="LOW"  -> final_verdict=DEPLOY, routed_by_band=True.
+          band="HIGH" -> final_verdict=ROUTE,  routed_by_band=True.
+        Only MODERATE / MIXED / UNRELIABLE / UNKNOWN / None reach the debate.
       Round 1 (PROPOSE): each model, given CONSTITUTION + question, states a
         stance + reasoning.
       Round 2+ (CRITIQUE/REFINE): each model sees the other models' stances
@@ -566,23 +678,72 @@ def run_debate(
     a streaming UI can render live:
         {"type": "round_start",    "round": int, "round_type": str, "models": [...]}
         {"type": "model_response", "round": int, "round_type": str,
-         "model": str, "stance": str, "text": str(<=400)}
+         "model": str, "stance": str, "text": str(<=400),
+         "errored": bool}        <- True when the model failed and DEFAULT_STANCE
+                                    was substituted; False on a successful call.
         {"type": "consensus",      "verdict": str, "vote_breakdown": {...},
-         "agreement": float}
+         "agreement": float, "consensus_kind": str}
+
+    Args:
+        question:       The safety-adjudication question under debate.
+        models:         List of model identifiers to recruit as debaters.
+        backend:        "local" (4-bit CUDA), "modal" (HTTP), or "hf" (dead).
+        rounds:         Number of debate rounds (minimum 1).
+        max_new_tokens: Token budget per generation call.
+        on_event:       Optional streaming callback.
+        band:           Optional risk band of the cell being adjudicated.
+                        "LOW" and "HIGH" trigger an immediate short-circuit;
+                        all other values (including None) fall through to the
+                        full debate. Safe default: None (full debate).
 
     Returns:
-        {question, models, backend, rounds:[{round, round_type,
-         responses:[{model, stance, text}]}], consensus:{verdict, vote_breakdown,
-         agreement}, final_verdict, elapsed_s}. When backend="modal" and the
-        endpoint disclosed the precision it used, the result additionally
-        carries "quantization" (e.g. "nf4-4bit") so the UI can disclose it.
+        {question, models, backend, band, rounds:[{round, round_type,
+         responses:[{model, stance, text, errored}]}],
+         consensus:{verdict, vote_breakdown, agreement, consensus_kind},
+         final_verdict, elapsed_s}.
+
+        When band is "LOW" or "HIGH" the result instead carries:
+        {question, models, backend, band, routed_by_band:True,
+         final_verdict:str, elapsed_s}.
+
+        When backend="modal" and the endpoint disclosed the precision it used,
+        the result additionally carries "quantization" (e.g. "nf4-4bit") so
+        the UI can disclose it.
     """
     global LAST_MODAL_QUANTIZATION
 
     start = time.perf_counter()
+
+    # ------------------------------------------------------------------
+    # Band gate: skip the full debate for clear-signal bands.
+    # ------------------------------------------------------------------
+    band_norm = str(band).upper().strip() if band is not None else None
+    if band_norm in BAND_SHORT_CIRCUIT_DEPLOY:
+        elapsed_s = time.perf_counter() - start
+        return {
+            "question": question,
+            "models": list(models),
+            "backend": backend,
+            "band": band_norm,
+            "routed_by_band": True,
+            "final_verdict": STANCE_DEPLOY,
+            "elapsed_s": elapsed_s,
+        }
+    if band_norm in BAND_SHORT_CIRCUIT_ROUTE:
+        elapsed_s = time.perf_counter() - start
+        return {
+            "question": question,
+            "models": list(models),
+            "backend": backend,
+            "band": band_norm,
+            "routed_by_band": True,
+            "final_verdict": STANCE_ROUTE,
+            "elapsed_s": elapsed_s,
+        }
+
     rounds = max(1, int(rounds))
     backend_norm = backend.lower().strip()
-    if backend_norm == "modal":
+    if backend_norm in {"modal", "hybrid"}:
         # Reset the disclosure so a stale value from a previous run can never
         # leak into this result if every modal call here fails.
         LAST_MODAL_QUANTIZATION = None
@@ -603,16 +764,20 @@ def run_debate(
             else:
                 prompt = _build_critique_prompt(question, prev_responses, model_id)
 
+            errored = False
             try:
                 text = generate(model_id, prompt, backend=backend, max_new_tokens=max_new_tokens)
             except Exception as exc:
                 # One model failing must not abort the debate: record a default
                 # stance with the error noted, let consensus proceed honestly.
+                # Mark errored=True so callers can distinguish a real CONDITIONAL
+                # vote from an error-substituted default.
                 logger.warning("model %s failed in round %d: %s", model_id, r, exc)
                 text = f"[generation error: {exc}]"
+                errored = True
 
             stance = parse_stance(text)
-            return {"model": model_id, "stance": stance, "text": text}
+            return {"model": model_id, "stance": stance, "text": text, "errored": errored}
 
         def _emit_response(record: dict) -> None:
             _emit(
@@ -624,13 +789,14 @@ def run_debate(
                     "model": record["model"],
                     "stance": record["stance"],
                     "text": record["text"][:EVENT_TEXT_CHARS],
+                    "errored": record["errored"],
                 },
             )
 
         # Remote model calls are independent within a round. Fan them out so
         # Modal can use its per-model container pools concurrently. Keep the
         # local backend sequential because those models share one CUDA device.
-        if backend_norm in {"modal", "hf"} and len(models) > 1:
+        if backend_norm in {"modal", "openbmb", "hybrid", "hf"} and len(models) > 1:
             responses_by_index: dict[int, dict] = {}
             with ThreadPoolExecutor(
                 max_workers=len(models), thread_name_prefix="quantsafe-debate"
@@ -663,21 +829,41 @@ def run_debate(
             "verdict": consensus["verdict"],
             "vote_breakdown": consensus["vote_breakdown"],
             "agreement": consensus["agreement"],
+            "consensus_kind": consensus["consensus_kind"],
         },
     )
 
     elapsed_s = time.perf_counter() - start
-    result = {
+    result: dict = {
         "question": question,
         "models": list(models),
         "backend": backend,
+        "band": band_norm,
         "rounds": round_records,
         "consensus": consensus,
         "final_verdict": consensus["verdict"],
         "elapsed_s": elapsed_s,
     }
-    if backend_norm == "modal" and LAST_MODAL_QUANTIZATION:
+    if backend_norm in {"modal", "hybrid"} and LAST_MODAL_QUANTIZATION:
         result["quantization"] = LAST_MODAL_QUANTIZATION
+    if backend_norm == "hybrid":
+        final_responses = round_records[-1]["responses"] if round_records else []
+        successful_models = {
+            response["model"]
+            for response in final_responses
+            if not response.get("errored")
+        }
+        providers = []
+        if any(model != OPENBMB_MINICPM_MODEL_ID for model in successful_models):
+            providers.append("Modal")
+        if OPENBMB_MINICPM_MODEL_ID in successful_models:
+            providers.append("OpenBMB")
+        result["providers"] = providers
+        result["provider_errors"] = [
+            response["model"]
+            for response in final_responses
+            if response.get("errored")
+        ]
     return result
 
 

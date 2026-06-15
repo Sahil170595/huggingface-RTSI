@@ -14,8 +14,8 @@ RTSI 0.6199. Route the riskiest 20% and recover 76% of the refusal-rate gap.
 
 4
 00:00:11,650 --> 00:00:16,450
-Three guard-model families expose where the evidence splits.
-Nemotron has the highest point estimate: 95% on this 40-item project-labeled corpus.
+Specialist guards plus MiniCPM expose the evidence boundary.
+MiniCPM scored 74.5% on 400 external human labels and joins the live contested-case debate.
 
 5
 00:00:16,100 --> 00:00:20,600

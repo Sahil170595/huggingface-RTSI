@@ -22,15 +22,17 @@ Show the measured `phi-2 + GPTQ` cell and Pareto route decision.
 > QuantSafe calls HIGH and returns ROUTE. Route the riskiest 20% and recover
 > 76% of the measured refusal-rate gap.
 
-### 3. Nemotron cross-check (12-16 s)
+### 3. Cross-vendor evidence (12-16 s)
 
-Show the three-family Judge Agreement tab.
+Show the external-label benchmark in the Judge Agreement tab.
 
-> Three guard-model families expose where the evidence splits. The Nemotron
-> guard has the highest point estimate: 95% on this 40-item project-labeled
-> corpus.
+> Specialist guards plus MiniCPM expose the evidence boundary.
 
-This is fixed-corpus cohort evidence, not a config-specific safety judgment.
+> MiniCPM scored 74.5% on 400 external human labels and joins the live
+> contested-case debate.
+
+The 89.76% selective-consensus result remains restricted to the three
+purpose-built guards.
 
 ### 4. Bind, verify, and attack (16-27 s)
 
@@ -71,6 +73,7 @@ production URL.
 | Judge agreement | Fleiss' kappa 0.7929; 95% CI 0.6641–0.9239 |
 | Unanimous-panel accuracy | 97.1% at 85% coverage |
 | NVIDIA judge evidence | Nemotron guard 95.0% point estimate; p=1.0 vs Granite |
+| OpenBMB evidence | MiniCPM4.1-8B 74.5% on BeaverTails N=400; live hybrid debater |
 | Fine-tuned refusal classifier | 97.73% accuracy / 0.976 F1 |
 | GGUF llama.cpp cells | 34 |
 | Largest runtime model | Qwen3-8B, 8,190,735,360 parameters |
