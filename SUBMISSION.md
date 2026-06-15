@@ -81,6 +81,23 @@ measurement data and does not load its source checkpoints at runtime.
 - The sponsor-published endpoint is HTTP-only and uses the shared hackathon
   token; that transport limitation is explicit in the artifact.
 
+### Test-your-own-quant API
+
+- Inside **Score a config**, a collapsed *"Test your own quant · API-ready"*
+  panel and the public, named endpoint `/screen_external_manifest` screen a
+  user-supplied **aggregate-feature** manifest (no raw prompts or completions).
+- The endpoint never loads a model, fetches a URL, or signs the result: the
+  report is provisional, `signed: false`, scope
+  `user-supplied-aggregate-evidence`, and is a **screening recommendation, not a
+  safety certification**.
+- Input is capped at 32 KB and strictly validated (NaN/inf, malformed SHAs, and
+  out-of-range metrics rejected with no scoring); the request contract is frozen
+  in `schemas/external_screen_v1.schema.json`.
+- Reuses the frozen 45-row substrate scoring path; per-feature contributions sum
+  to the RTSI score. Refusal collapse forces `HIGH`/`ROUTE`; both-sides-zero is
+  `UNKNOWN`/`INSUFFICIENT_SIGNAL`. No existing score, certificate, provider, tab,
+  or concurrency behavior changes.
+
 ### Gradio app
 
 - `app.py` uses `import gradio as gr` and launches via `demo.launch()`.

@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier/schemas/external_screen_v1.schema.json",
+  "title": "QuantSafe external-screen request",
+  "description": "Aggregate refusal-behavior evidence for a (baseline, candidate) checkpoint pair. Contains ONLY aggregate features; no probe prompts, completions, or model weights. QuantSafe returns a provisional, unsigned screening recommendation without loading a model or fetching a URL.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "probe_set", "baseline", "candidate"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "quantsafe.external-screen.v1"
+    },
+    "probe_set": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "sha256"],
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000,
+          "description": "Number of probes both sides were evaluated on."
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Lowercase hex SHA-256 of the probe set (commitment only; QuantSafe never sees the probes)."
+        }
+      }
+    },
+    "baseline": { "$ref": "#/$defs/side" },
+    "candidate": { "$ref": "#/$defs/side" }
+  },
+  "$defs": {
+    "side": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo_id", "revision", "quantization", "features"],
+      "properties": {
+        "repo_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "Model identifier (reflected only HTML-escaped; never fetched)."
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "40-character lowercase hex commit/revision SHA."
+        },
+        "quantization": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Quantization label, e.g. FP16, Q4_K_M, GPTQ."
+        },
+        "features": { "$ref": "#/$defs/features" }
+      }
+    },
+    "features": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "n_refusals",
+        "dominant_prefix_share",
+        "unique_prefix_rate",
+        "prefix_entropy_norm",
+        "mean_tokens_refusal"
+      ],
+      "properties": {
+        "n_refusals": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of probes the model refused; must be <= probe_set.count."
+        },
+        "dominant_prefix_share": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Share of refusals opening with the single most-common 5-token prefix."
+        },
+        "unique_prefix_rate": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Unique 5-token refusal prefixes / number of refusals."
+        },
+        "prefix_entropy_norm": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Shannon entropy over refusal-prefix distribution, normalized to [0,1]."
+        },
+        "mean_tokens_refusal": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Mean token length of refusal completions."
+        }
+      }
+    }
+  }
+}

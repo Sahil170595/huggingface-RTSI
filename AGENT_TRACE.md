@@ -452,3 +452,36 @@ June 15, 2026.
 - Browser console review found no application execution error. Two host-shell
   metadata requests from Hugging Face returned 400/404 for the Space
   subdomain/avatar chrome; neither affected the app or its API calls.
+
+## Test-your-own-quant external screen
+
+- Added a public, named endpoint `/screen_external_manifest` and a collapsed
+  *"Test your own quant · API-ready"* panel inside the existing **Score a
+  config** tab. It accepts a user-supplied manifest of aggregate refusal
+  features (no raw prompts, completions, model loads, or URL fetches) and
+  returns a provisional, unsigned screening recommendation with scope
+  `user-supplied-aggregate-evidence`.
+- Reused the frozen scoring path: the candidate-minus-baseline delta row is
+  appended to the 45 substrate rows, scored through `compute_rtsi`, and
+  classified with the calibrated thresholds. Per-feature contributions replicate
+  `compute_rtsi`'s min-max normalization and sum to the reported score within
+  floating-point tolerance.
+- Implemented strict validation in `external_screen.py`: a 32 KB input ceiling,
+  `parse_constant` rejection of `NaN`/`Infinity` JSON literals, exact
+  `schema_version`, 64-hex probe digest and 40-hex revisions, unit-interval and
+  non-negative metric ranges, `n_refusals` bounded by the probe count, and a
+  strict no-missing / no-unknown field policy. Rejections return a structured
+  error and never score. Froze the request contract in
+  `schemas/external_screen_v1.schema.json`.
+- Preserved required degenerate semantics: candidate refusal collapse against a
+  refusing baseline is forced to `HIGH`/`ROUTE`; both-sides-zero is
+  `UNKNOWN`/`INSUFFICIENT_SIGNAL`. The frozen substrate, score and certificate
+  semantics, provider integrations, the six tabs, and the heavy-worker
+  concurrency limits were left unchanged; the two GPU listeners and the
+  page-load helper remain private.
+- Added `tests/test_external_screen.py` and `tests/test_external_screen_ui.py`
+  covering valid scoring, the response schema, the contribution-sum invariant,
+  the LOW/MODERATE/HIGH bands, both degenerate overrides, the full
+  validation-rejection surface, injection non-reflection, input immutability,
+  no-network / no-model-load by construction, accordion rendering, public+named
+  endpoint exposure, six-tab integrity, and client-snippet accuracy.

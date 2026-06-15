@@ -32,6 +32,7 @@ import gradio as gr
 import pandas as pd
 import plotly.graph_objects as go
 
+from external_screen import safe_example_json, screen_external_manifest
 from features import live_rtsi, load_substrate_feature_rows
 
 try:
@@ -1691,6 +1692,21 @@ def score_config(model: str, quant: str):
 
 
 # ---------------------------------------------------------------------------
+# Tab 1 — "Test your own quant" external-screen endpoint (public API)
+# ---------------------------------------------------------------------------
+
+def screen_external(manifest_text: str) -> dict:
+    """Public endpoint: provisional screening of user-supplied aggregate evidence.
+
+    Thin wrapper around external_screen.screen_external_manifest. Returns the
+    contract response dict for gr.JSON. Never loads a model, fetches a URL, or
+    logs supplied content; the report is provisional and unsigned. The function
+    never raises — invalid input returns a well-formed rejected response.
+    """
+    return screen_external_manifest(manifest_text if manifest_text is not None else "")
+
+
+# ---------------------------------------------------------------------------
 # Tab 2 — Exploratory live probe
 # ---------------------------------------------------------------------------
 
@@ -2294,6 +2310,19 @@ _private_event_kwargs = (
     else {"api_name": False}
 )
 
+
+def _public_event_kwargs(name: str) -> dict:
+    """Public, named API endpoint kwargs, version-tolerant across Gradio.
+
+    Mirrors the privacy pattern above: newer Gradio gates exposure on
+    ``api_visibility`` (which still needs the explicit ``api_name`` to fix the
+    route), older Gradio uses ``api_name`` alone. Either way the endpoint is
+    public and explicitly named.
+    """
+    if "api_visibility" in _event_parameters:
+        return {"api_visibility": "public", "api_name": name}
+    return {"api_name": name}
+
 with gr.Blocks(**_blocks_kwargs) as demo:
     gr.HTML(
         '<div class="qs-header" style="text-align:center;padding:22px 0 6px;">'
@@ -2389,6 +2418,63 @@ with gr.Blocks(**_blocks_kwargs) as demo:
             gr.HTML(_build_prospective_html(), padding=False)
 
             score_btn.click(score_config, [model_dd, quant_dd], [badge_html, rec_html])
+
+            # --- "Test your own quant" external screen (collapsed, API-ready) --
+            with gr.Accordion(
+                "Test your own quant · API-ready", open=False
+            ):
+                gr.HTML(
+                    '<div style="font-size:13px;color:#4A453E;line-height:1.6;'
+                    'padding:4px 2px 10px;">'
+                    "Already ran the four refusal features on <b>your own</b> "
+                    "baseline and candidate? Paste the <b>aggregate evidence</b> "
+                    "below for a provisional screening recommendation. "
+                    "<b>No prompts, completions, or model weights are needed or "
+                    "accepted</b> &mdash; QuantSafe does not load a model, fetch a "
+                    "URL, or sign this report. The result is a "
+                    "<b>screening recommendation, not a safety certification</b>, "
+                    'and is returned <b>unsigned</b> with scope '
+                    '<code>user-supplied-aggregate-evidence</code>.'
+                    "</div>",
+                    padding=False,
+                )
+                screen_input = gr.Code(
+                    value=safe_example_json(),
+                    language="json",
+                    label="External-screen manifest (quantsafe.external-screen.v1)",
+                )
+                screen_btn = gr.Button("Screen this manifest", variant="secondary")
+                gr.HTML(
+                    '<div style="font-size:12px;color:#6B6660;line-height:1.6;'
+                    'padding:8px 2px 4px;">'
+                    "Call it programmatically with the public endpoint "
+                    "<code>/screen_external_manifest</code>:"
+                    "<pre style=\"background:#F3EFE9;border:1px solid #E5E0D8;"
+                    "border-radius:6px;padding:12px;overflow:auto;font-size:12px;"
+                    "margin-top:8px;\">"
+                    "from gradio_client import Client\n"
+                    "import json\n\n"
+                    "client = Client(\"build-small-hackathon/quantsafe-certifier\")\n"
+                    "manifest = json.dumps({\n"
+                    "  \"schema_version\": \"quantsafe.external-screen.v1\",\n"
+                    "  \"probe_set\": {\"count\": 120, \"sha256\": \"&lt;64-hex&gt;\"},\n"
+                    "  \"baseline\":  {\"repo_id\": \"your-org/your-model\", ...},\n"
+                    "  \"candidate\": {\"repo_id\": \"your-org/your-model\", ...},\n"
+                    "})\n"
+                    "report = client.predict(manifest, api_name=\"/screen_external_manifest\")\n"
+                    "print(report[\"band\"], report[\"action\"], report[\"signed\"])"
+                    "</pre>"
+                    "</div>",
+                    padding=False,
+                )
+                screen_output = gr.JSON(label="Screening report (provisional · unsigned)")
+
+                screen_btn.click(
+                    screen_external,
+                    [screen_input],
+                    [screen_output],
+                    **_public_event_kwargs("screen_external_manifest"),
+                )
 
         # ----- Tab 2 ---------------------------------------------------------
         with gr.Tab("Exploratory live probe", id="live"):
