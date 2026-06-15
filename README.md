@@ -89,7 +89,7 @@ Every partner below is a load-bearing runtime or build dependency, not a metadat
 | **Modal** | Authenticated A10G endpoints run the live constitutional debate and regenerate the judge cache — Modal powers **both development and runtime** | Best Use of Modal |
 | **OpenBMB** | `MiniCPM4.1-8B` is a live debater (flips `DEPLOY → ROUTE` after critique) and a benchmarked guard on the external N=400 BeaverTails set | Best MiniCPM Build |
 | **NVIDIA** | `Nemotron-Safety-Guard-8B-v3` is one of three independent-family judge models (native BF16 through the Modal `/judge` backend) | Nemotron Hardware Prize |
-| **OpenAI** | Codex-attributed commits across the connected GitHub repo and Space history | Best Use of Codex |
+| **OpenAI** | Codex co-built + hardened major lanes — parallel Modal debate, model-revision pinning, judge-validation metrics, OpenBMB/MiniCPM, the demo build, and the external-screen spec→hardening — via Codex-attributed commits ([deep dive](AGENT_TRACE.md)) | Best Use of Codex |
 | **Gradio** | Custom six-tab `gr.Blocks` app with a public, named `/screen_external_manifest` API | — |
 
 **Self-declared badges:** `achievement:offbrand` (custom editorial UI) · `achievement:welltuned` ([published ModernBERT refusal fine-tune](https://huggingface.co/Crusadersk/quantsafe-refusal-modernbert)) · `achievement:llama` (34 GGUF cells through llama.cpp via Ollama) · `achievement:sharing` ([public agent trace](AGENT_TRACE.md)) · `achievement:fieldnotes` ([engineering report](FIELD_NOTES.md))
