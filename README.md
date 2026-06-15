@@ -13,6 +13,7 @@ tags:
   - track:backyard
   - sponsor:openai
   - sponsor:modal
+  - sponsor:nvidia
   - achievement:offbrand
   - achievement:welltuned
   - achievement:sharing
@@ -46,18 +47,18 @@ models:
   - Qwen/Qwen3-1.7B
   - Qwen/Qwen2.5-1.5B-Instruct
   - meta-llama/Llama-3.2-1B-Instruct
-  - unsloth/Llama-3.2-1B-Instruct
   - Qwen/Qwen3-8B
   - microsoft/Phi-4-mini-instruct
   - HuggingFaceTB/SmolLM3-3B
   - Qwen/Qwen3Guard-Gen-0.6B
   - ibm-granite/granite-guardian-3.3-8b
+  - nvidia/Llama-3.1-Nemotron-Safety-Guard-8B-v3
   - Crusadersk/quantsafe-refusal-modernbert
 ---
 
 # QuantSafe Certifier
 
-**QuantSafe creates a release-target-bound, Ed25519-signed screening record for a published quantized model.** For the 11 published AWQ/GPTQ checkpoints in the measured matrix, record v2 signs a publisher-linked Hub revision plus a content-addressed manifest of the frozen matrix, validation report, judge results, scorer, artifact mapping, and signing policy.
+**QuantSafe creates a release-target-bound, Ed25519-signed, tamper-evident release-screen record for a published quantized model.** For the 11 published AWQ/GPTQ checkpoints in the measured matrix, record v2 signs a publisher-linked Hub revision plus a content-addressed manifest of the frozen matrix, validation report, judge results, scorer, artifact mapping, and signing policy.
 
 The signature proves issuer identity and payload integrity. It does **not** prove that a model is safe. RTSI is a study-internal triage signal that decides whether a configuration clears this screen, needs review, or must be routed to direct safety evaluation.
 
@@ -74,9 +75,20 @@ proof that those exact weights generated the historical measurement.
 | [`phi-2-gptq-4bit`](https://huggingface.co/Crusadersk/phi-2-gptq-4bit) | [`6385e88d733f…`](https://huggingface.co/Crusadersk/phi-2-gptq-4bit/tree/6385e88d733fe95b67dc6d18f264b83c6462e681) | RTSI `0.6199` (`HIGH`) | `ROUTE` |
 | [`qwen2.5-1.5b-gptq-4bit`](https://huggingface.co/Crusadersk/qwen2.5-1.5b-gptq-4bit) | [`4e1c7d4d78a3…`](https://huggingface.co/Crusadersk/qwen2.5-1.5b-gptq-4bit/tree/4e1c7d4d78a3fbb82742207baa7ac305bd836cb5) | RTSI `0.7864` (`HIGH`, matrix maximum) | `ROUTE` |
 
-[Open the Space](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier) · [Watch the 49-second judge demo](demo/quantsafe-demo.webm) · [Download the social-ready MP4](demo/quantsafe-demo.mp4) · [Browse the GitHub source](https://github.com/Sahil170595/huggingface-RTSI) · [Browse the Space source](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier/tree/main) · [Read the paper](https://arxiv.org/abs/2606.10154) · [Field notes](FIELD_NOTES.md) · [Adversarial audit](SECURITY_AUDIT.md)
+[Open the Space](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier) · [Watch the 49-second judge demo](demo/quantsafe-demo.webm) · [Download the social-ready MP4](demo/quantsafe-demo.mp4) · [Browse the GitHub source](https://github.com/Sahil170595/huggingface-RTSI) · [Browse the Space source](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier/tree/main) · [Read the paper](https://arxiv.org/abs/2606.10154) · [Field notes](FIELD_NOTES.md) · [Judge benchmark dataset](https://huggingface.co/datasets/Crusadersk/quantsafe-judge-benchmark) · [Adversarial audit](SECURITY_AUDIT.md)
 
 **Built & audited in the open.** The full agent build/audit trace is published at [Crusadersk/quantsafe-agent-trace](https://huggingface.co/datasets/Crusadersk/quantsafe-agent-trace).
+
+## Who this is for
+
+I am the first user. I publish 11 public GPTQ/AWQ 4-bit checkpoints on Hugging
+Face. A retrospective audit of that catalog found configurations where ordinary
+quality results hid severe refusal damage, including my published
+`phi-2-gptq-4bit`. I built QuantSafe to turn that finding into a repeatable
+publisher workflow: inspect a measured release target, assign **SCREEN_PASS /
+REVIEW / ROUTE**, and retain a signed record of the screen, evidence version,
+and release action. It is a triage gate for my quantized-model catalog, not a
+claim that a downstream deployment or model is safe.
 
 ## Verify a signed record
 
@@ -116,9 +128,10 @@ The absolute deltas are normalized across the reference matrix and combined usin
 - **ROC AUC 0.8445** under leave-one-cell-out validation
 - **ROC AUC 0.8403** under stricter leave-one-model-family-out validation, with a stratified-bootstrap 95% CI of **0.7080–0.9475**
 - Routing the 9 HIGH cells routes **20%** of configurations and recovers **76.17%** of the measured refusal-rate gap
-- Two independent safety judges agree on **35/40** cases, Cohen's kappa **0.7484 (`RELIABLE`)**
-- Qwen3Guard-Gen-0.6B reaches **85.0%** curated-label accuracy and Granite Guardian reaches **92.5%**
-- Unanimous non-unclear judge decisions cover **87.5%** of the corpus and are **94.3%** accurate
+- Three safety judge models from distinct model families agree unanimously on **34/40** cases, Fleiss' kappa **0.7929 (`RELIABLE`)**; its zone-stratified bootstrap 95% CI is **0.6641–0.9239**, which crosses the 0.70 band threshold
+- Qwen3Guard-Gen-0.6B reaches **85.0%** project-label accuracy, Granite Guardian **92.5%**, and NVIDIA Llama-3.1-Nemotron-Safety-Guard-8B-v3 **95.0%**, the highest point estimate on this 40-item project-labeled corpus; the exact paired comparison with Granite is **McNemar p=1.0**
+- Unanimous non-unclear judge decisions cover **85%** of the corpus and are **97.1%** accurate
+- The corpus, all three judges' verdicts, and this comparison are published as an open, citable benchmark: [`Crusadersk/quantsafe-judge-benchmark`](https://huggingface.co/datasets/Crusadersk/quantsafe-judge-benchmark)
 - The fine-tuned 149.6M-parameter semantic refusal cross-check reaches **97.73% accuracy / 0.976 refusal F1** on 441 held-out XSTest responses, versus **52.61% / 0.154** for the legacy opener lexicon
 - Cached three-model debate reaches **CONDITIONAL** at **0.67 agreement**, a genuine 2/3 majority
 
@@ -141,32 +154,44 @@ llama.cpp.
 ## Six-tab workflow
 
 1. **Score a config**: inspect any measured model/quantization cell, the risk heatmap, and the routing Pareto curve.
-2. **Exploratory live probe**: compare two live small-model checkpoints over a held-internal probe set. This is explicitly out-of-domain for calibrated RTSI unless the pair is a matched baseline and quantized checkpoint.
-3. **Judge Agreement**: inspect agreement and curated-label accuracy for Qwen3Guard-Gen-0.6B and Granite Guardian 3.3 8B.
-4. **Signed Screening Record**: sign the artifact revision, evidence hashes, score, band, supporting judge-cohort result, and release-gate action with Ed25519.
+2. **Exploratory live probe**: choose a pair from four live small-model checkpoint options and compare them over a held-internal probe set. This is explicitly out-of-domain for calibrated RTSI unless the pair is a matched baseline and quantized checkpoint.
+3. **Judge Agreement**: inspect fixed-corpus agreement and project-label accuracy for three judge models from distinct families: Qwen3Guard-Gen-0.6B, Granite Guardian 3.3 8B, and NVIDIA Llama-3.1-Nemotron-Safety-Guard-8B-v3.
+4. **Signed Screening Record**: create a tamper-evident release-screen record covering the artifact revision, evidence hashes, score, band, supporting cohort-level benchmark result, and release-gate action.
 5. **Constitutional Debate**: replay or run a Modal-backed debate for contested MODERATE/MIXED cases.
 6. **About**: review the method, thresholds, calibration, and limitations.
 
 ## Small-model compliance
 
-The Build Small rule caps the **total model catalog at 32B parameters**. Counting
-every runtime repository listed in this model card, including both equivalent
-Llama 3.2 1B repositories rather than deduplicating them, QuantSafe totals
-**30.972674562B parameters**.
+The Build Small rule caps **each individual model at under 32B parameters**.
+Every model QuantSafe runs clears that cap comfortably. The largest is
+**Qwen3-8B at 8,190,735,360 parameters**.
 
-| Role | Runtime catalog |
-|---|---|
-| Exploratory live probe | Qwen3-0.6B, Qwen3-1.7B, Qwen2.5-1.5B, Llama 3.2 1B (two repositories), batched under one `@spaces.GPU` allocation |
-| Semantic refusal cross-check | QuantSafe Refusal ModernBERT (149.6M, fine-tuned from ModernBERT-base) |
-| Safety judges | Qwen3Guard-Gen-0.6B, Granite Guardian 3.3 8B |
-| Constitutional debate | Qwen3-8B, Phi-4-mini-instruct, SmolLM3-3B |
+| Role | Runtime catalog | Largest model |
+|---|---|---|
+| Exploratory live probe | Four checkpoint options: Qwen3-0.6B, Qwen3-1.7B, Qwen2.5-1.5B-Instruct, and Llama 3.2 1B Instruct; the selected pair is batched under one `@spaces.GPU` allocation | 1.7B |
+| Semantic refusal cross-check | QuantSafe Refusal ModernBERT (149.6M, fine-tuned from ModernBERT-base) | 0.150B |
+| Safety judges | Qwen3Guard-Gen-0.6B, Granite Guardian 3.3 8B, NVIDIA Llama-3.1-Nemotron-Safety-Guard-8B-v3 | 8.171B |
+| Constitutional debate | Qwen3-8B, Phi-4-mini-instruct, SmolLM3-3B | Qwen3-8B: 8,190,735,360 |
 
 The 0.6B Qwen guard is deliberate rather than cosmetic: the
 [Qwen3Guard report](https://huggingface.co/papers/2510.14276) reports an English
 response-classification average of 82.0 for 0.6B versus 83.9 for 8B. On this
-project's fixed 40-item corpus, replacing the 8B guard preserved an 85.0%
-accuracy result and a RELIABLE two-family agreement band while reducing the
-catalog by roughly 7.44B parameters.
+project's fixed 40-item corpus, three judge models from distinct families —
+Qwen3Guard-Gen-0.6B, Granite Guardian, and NVIDIA
+Llama-3.1-Nemotron-Safety-Guard-8B-v3 — reach a RELIABLE Fleiss' agreement
+band. The Nemotron guard's 95.0% accuracy is the highest point estimate on this
+project-labeled corpus, not a general ranking of the judge models.
+
+## NVIDIA evidence
+
+NVIDIA's `Llama-3.1-Nemotron-Safety-Guard-8B-v3` is one of the three judge
+models in the published 40-item benchmark. Its 95.0% project-label accuracy is
+the cohort's highest point estimate on that fixed corpus, but the exact paired
+comparison with Granite is not statistically separated (`p=1.0`). The
+benchmark cache was generated through the authenticated Modal `/judge` backend
+with Nemotron loaded in native **BF16** and is displayed in the Judge Agreement
+tab. The Nemotron guard does **not** cross-check every screen, produce a
+config-specific verdict, or turn a screening record into proof of model safety.
 
 The exploratory semantic cross-check is a project-specific fine-tune published at
 [Crusadersk/quantsafe-refusal-modernbert](https://huggingface.co/Crusadersk/quantsafe-refusal-modernbert).
@@ -176,13 +201,24 @@ signal rather than silently changing the frozen RTSI calibration.
 
 ## Modal runtime
 
-Modal is part of the production runtime, not a placeholder. `modal_app.py` serves authenticated `/generate` and `/judge` endpoints on GPU-backed, per-model container pools. Within each debate round, the Space fans independent model calls out concurrently and restores deterministic model order before consensus.
+Modal is part of the production runtime, not a placeholder. `modal_app.py`
+serves authenticated `/generate` and `/judge` endpoints on GPU-backed,
+per-model container pools. Within each debate round, the Space fans model calls
+out concurrently and restores deterministic model order before consensus. The
+Judge Agreement tab itself displays a fixed cached benchmark; `/judge` is used
+to regenerate that benchmark, not to cross-check each score or certificate.
 
 The exploratory probe uses the Space's ZeroGPU hardware directly. One
 `@spaces.GPU(duration=60)` call holds a single RTX Pro 6000 allocation while
 both selected checkpoints run the full internal probe batch; it does not
 re-enter the shared GPU queue for every prompt. Modal remains the separate,
 authenticated multi-model debate and judge backend.
+
+The hosted app is cloud-dependent: the exploratory probe uses Hugging Face
+ZeroGPU, while live debate and judge-cache generation use Modal. The public
+probe intentionally exposes no separate inference-provider API path. Static
+scoring, cached evidence, and local signature verification do not make the
+complete hosted workflow off-grid.
 
 The endpoint requires `Authorization: Bearer $MODAL_TOKEN`; unknown models are rejected by an allowlist. Model downloads are pinned to immutable Hugging Face commit SHAs in `model_revisions.py`.
 
@@ -216,6 +252,7 @@ remains stable.
 
 - All local and Modal `from_pretrained` calls use audited 40-character commit revisions, including the fine-tuned classifier.
 - The 51-row study comprises 6 baselines and 45 non-baseline cells; the signed screening substrate and cached judge/debate outputs are versioned under `substrate/`.
+- Judge regeneration writes an immutable manifest before explicit promotion. The current run is [`judge-run-20260615T002149Z-3cf88d864691.json`](substrate/judge_runs/judge-run-20260615T002149Z-3cf88d864691.json), bound to code revision `00f1a8d`, the corpus SHA-256, exact model revisions, generation settings, reported precision, and raw-output hashes.
 - Probe prompts and raw live completions are never rendered in the UI.
 - Version 2 records bind the publisher's release target and sign a content-addressed evidence manifest. The verifier enforces v2 schema, artifact mapping, and band/action consistency in addition to Ed25519 issuer verification.
 - Records are verified against this Space's pinned issuer public key (`9a074a15598fef26f5fbd33e8d604cb6c2372989f164331c11018a83fcd98519`); see [Verify a signed record](#verify-a-signed-record) and the Foreign re-sign test.

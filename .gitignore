@@ -16,7 +16,6 @@ transformers_cache/
 hf_cache/
 .cert_key_local.txt
 .playwright-cli/
-AGENT_TRACE.md
 social/
 HACKATHON_ORG_PAGE.md
 HACKATHON_BRIEF.md

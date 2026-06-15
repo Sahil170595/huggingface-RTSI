@@ -529,3 +529,11 @@ class TestAgreementBreakdown:
         assert brk["by_zone"].get("clear_safe", 0) == 0
         assert brk["by_zone"].get("clear_unsafe", 0) == 0
         assert brk["by_zone"]["borderline"] == 6
+
+    def test_live_cache_exposes_uncertainty_without_overclaiming(self):
+        uncertainty = app.JUDGE_RESULTS["statistical_uncertainty"]
+        kappa = uncertainty["kappa"]
+        assert kappa["ci_low"] < 0.70 < kappa["ci_high"]
+        comparison = uncertainty["top_two_accuracy"]
+        assert comparison["two_sided_p_value"] == 1.0
+        assert comparison["accuracy"] == [0.95, 0.925]

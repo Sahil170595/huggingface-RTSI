@@ -2098,6 +2098,11 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                 _n_items = int(_ag.get("n_items", JUDGE_RESULTS.get("n_items", 0)) or 0)
                 _n_judges = int(_ag.get("n_judges", len(_judges)) or len(_judges))
                 _brk = _agreement_breakdown(_judges, _zones)
+                _uncertainty = (
+                    JUDGE_RESULTS.get("statistical_uncertainty", {}) or {}
+                )
+                _kappa_uncertainty = _uncertainty.get("kappa", {}) or {}
+                _top_two = _uncertainty.get("top_two_accuracy", {}) or {}
 
                 # The agreement statistic name comes from the cache: 2 raters
                 # -> Cohen's kappa, 3+ -> Fleiss' kappa. Interpolating it (rather
@@ -2124,6 +2129,24 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                     f"</div>",
                     padding=False,
                 )
+                if _kappa_uncertainty:
+                    _kappa_ci_low = float(_kappa_uncertainty.get("ci_low", 0.0))
+                    _kappa_ci_high = float(_kappa_uncertainty.get("ci_high", 0.0))
+                    _kappa_resamples = int(
+                        _kappa_uncertainty.get("n_resamples", 0)
+                    )
+                    gr.HTML(
+                        '<div style="margin-top:8px;padding:10px 12px;'
+                        'border-radius:8px;background:#F4EEE0;color:#5C4A20;'
+                        'font-size:13px;line-height:1.5;">'
+                        "<b>Uncertainty:</b> stratified-bootstrap 95% CI "
+                        f"<b>{_kappa_ci_low:.3f}–{_kappa_ci_high:.3f}</b> "
+                        f"({_kappa_resamples:,} resamples). The interval crosses "
+                        "the predeclared 0.70 RELIABLE threshold, so the band is a "
+                        "point-estimate classification, not a certainty claim."
+                        "</div>",
+                        padding=False,
+                    )
 
                 # (4) Honest framing — every number AND the rater-count word and
                 # statistic name are interpolated from JUDGE_RESULTS, never
@@ -2133,9 +2156,9 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                     if isinstance(_kappa, (int, float)) else "—"
                 )
                 _trust_clause = (
-                    "agreement passes the cohort reliability gate"
+                    "the point estimate meets the cohort reliability gate"
                     if _band == "RELIABLE"
-                    else "agreement does not pass the cohort reliability gate"
+                    else "the point estimate does not meet the cohort reliability gate"
                 )
                 gr.Markdown(
                     "Cross-checking distinct guard-model families measures how "
@@ -2150,19 +2173,19 @@ with gr.Blocks(**_blocks_kwargs) as demo:
 
                 # (2) The judges by name + verdict counts (table + bars).
                 gr.Markdown(f"### The {_count_word} judges")
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        gr.Dataframe(
-                            value=build_judge_counts_df(_judges),
-                            headers=[
-                                "Judge", "Safe", "Unsafe", "Unclear",
-                                "Accuracy %", "Macro F1",
-                            ],
-                            datatype=["str", "number", "number", "number", "number", "number"],
-                            interactive=False, wrap=True,
-                        )
-                    with gr.Column(scale=1):
-                        gr.Plot(build_judge_counts_fig(_judges))
+                gr.Dataframe(
+                    value=build_judge_counts_df(_judges),
+                    headers=[
+                        "Judge", "Safe", "Unsafe", "Unclear",
+                        "Accuracy %", "Macro F1",
+                    ],
+                    datatype=["str", "number", "number", "number", "number", "number"],
+                    column_widths=[360, 72, 72, 80, 110, 92],
+                    interactive=False,
+                    max_height=220,
+                    wrap=False,
+                )
+                gr.Plot(build_judge_counts_fig(_judges))
 
                 # (3) Disagreement summary + per-zone breakdown.
                 _agree = _brk["agree"]
@@ -2202,6 +2225,22 @@ with gr.Blocks(**_blocks_kwargs) as demo:
                         "</div>",
                         padding=False,
                     )
+                if _top_two:
+                    _compared_models = _top_two.get("models", []) or []
+                    _p_value = float(_top_two.get("two_sided_p_value", 1.0))
+                    if len(_compared_models) == 2:
+                        gr.HTML(
+                            '<div style="margin:8px 0;padding:10px 12px;'
+                            'border-radius:8px;background:#FBFAF7;'
+                            'border:1px solid #E5E0D8;color:#4A453E;'
+                            'font-size:13px;line-height:1.5;">'
+                            "<b>Top-two comparison:</b> the highest point "
+                            "estimates differ by one item. Exact paired McNemar "
+                            f"<b>p={_p_value:.3f}</b>; this corpus does not "
+                            "statistically separate the two models."
+                            "</div>",
+                            padding=False,
+                        )
 
                 # (5) Provenance caption.
                 gr.HTML(

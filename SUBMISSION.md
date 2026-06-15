@@ -18,9 +18,9 @@
 | Tab | What it shows | Headline number |
 |---|---|---|
 | **Score a config** | Static refusal-drift lookup across 45 measured (model, quant) cells — 23 LOW / 13 MODERATE / 9 HIGH | AUC 0.8445 |
-| **Exploratory live probe** | Compares two live small-model checkpoints and reports aggregate drift; it is explicitly outside the matched baseline/quant calibration | 97.73% external XSTest classifier accuracy |
-| **Judge Agreement** | Two independent safety classifiers label a 40-prompt corpus; agreement and curated-label accuracy are reported separately | kappa = 0.7484 (RELIABLE); 35/40 agree; unanimous decisions are 94.3% accurate |
-| **Signed Screening Record** | Ed25519-signed record over a publisher-linked release revision, content-addressed evidence, screen result, cohort-level kappa, and action (`SCREEN_PASS` / `REVIEW` / `ROUTE`), verified against the pinned issuer key | release-target-bound and tamper-evident |
+| **Exploratory live probe** | Selects a pair from four live checkpoint options and reports aggregate drift; it is explicitly outside the matched baseline/quant calibration | 97.73% external XSTest classifier accuracy |
+| **Judge Agreement** | Three safety judge models from distinct model families label a fixed 40-prompt corpus; agreement, uncertainty, and project-label accuracy are reported separately | Fleiss' kappa = 0.7929 (95% bootstrap CI 0.6641–0.9239); 34/40 unanimous; unanimous decisions are 97.1% accurate |
+| **Signed Screening Record** | Tamper-evident Ed25519 release-screen record over a publisher-linked release revision, content-addressed evidence, screen result, cohort-level benchmark result, and action (`SCREEN_PASS` / `REVIEW` / `ROUTE`) | release-target-bound; not proof of model safety or a config-specific judge evaluation |
 | **Constitutional Debate** | Small models argue "deploy or route" on MODERATE / MIXED configs under a constitution and reach consensus | cached example: 3 models -> CONDITIONAL at 0.67 agreement (genuine 2/3 majority) |
 | **About** | Defines the study-internal scope, validation, paper relationship, and limitations | arXiv:2606.10154 |
 
@@ -36,23 +36,37 @@
 - `achievement:sharing`: public agent trace dataset.
 - `achievement:fieldnotes`: published engineering report.
 
-The app does not claim `achievement:offgrid`; ZeroGPU, Modal, and optional HF
-Inference Providers are explicit cloud dependencies.
+The app does not claim `achievement:offgrid`; ZeroGPU and Modal are explicit
+cloud dependencies. Static score lookup and
+cached evidence can render without live inference, but the complete hosted
+workflow is not local-only.
 
-### Total runtime model catalog <=32B
+### Every runtime model individually under 32B
 
-| Role | Models | Size |
+| Role | Models | Largest model |
 |---|---|---|
-| Refusal substrate (Score a config) | qwen2.5-1.5b, phi-2, llama3.2-1b, llama3.2-3b, qwen2.5-7b, mistral-7b | <=7B |
-| Exploratory live probe | Qwen3-0.6B, Qwen3-1.7B, Qwen2.5-1.5B-Instruct, Llama-3.2-1B-Instruct (+ unsloth mirror) | <=2B |
+| Refusal substrate (Score a config) | qwen2.5-1.5b, phi-2, llama3.2-1b, llama3.2-3b, qwen2.5-7b, mistral-7b | 7B |
+| Exploratory live probe | Four checkpoint options: Qwen3-0.6B, Qwen3-1.7B, Qwen2.5-1.5B-Instruct, Llama-3.2-1B-Instruct | 1.7B |
 | Semantic refusal cross-check | Crusadersk/quantsafe-refusal-modernbert | 0.150B |
-| Safety judges (Judge Agreement) | Qwen3Guard-Gen-0.6B, Granite-Guardian-3.3-8b | 0.752B + 8.171B |
-| Debate models (Constitutional Debate) | Qwen3-8B, Phi-4-mini-instruct, SmolLM3-3B | <=8.2B |
+| Safety judges (Judge Agreement) | Qwen3Guard-Gen-0.6B, Granite-Guardian-3.3-8b, Llama-3.1-Nemotron-Safety-Guard-8B-v3 | 8.171B |
+| Debate models (Constitutional Debate) | Qwen3-8B, Phi-4-mini-instruct, SmolLM3-3B | Qwen3-8B: 8,190,735,360 |
 
-Counting every runtime repository listed in the Space model card, including
-both equivalent Llama 3.2 1B repositories rather than deduplicating them, the
-catalog totals **30.972674562B parameters**. The fixed reference matrix is stored
+The Build Small cap applies per individual model, not to the summed catalog;
+every runtime repository above clears it comfortably. The largest is
+**Qwen3-8B at 8,190,735,360 parameters**. The fixed reference matrix is stored
 measurement data and does not load its source checkpoints at runtime.
+
+### NVIDIA evidence
+
+- `nvidia/Llama-3.1-Nemotron-Safety-Guard-8B-v3` is one of three judge models
+  from distinct families in the fixed 40-item benchmark.
+- Its 95.0% project-label accuracy is the highest point estimate on this
+  project-labeled corpus, not a general model ranking; the paired comparison
+  with Granite is McNemar `p=1.0`.
+- The cached benchmark was generated through the authenticated Modal `/judge`
+  backend with Nemotron in native BF16. The Judge Agreement tab does not call
+  the Nemotron guard for every score or certificate, and the cohort result is
+  not config-specific.
 
 ### Gradio app
 
@@ -63,7 +77,10 @@ measurement data and does not load its source checkpoints at runtime.
 
 - Final Space: `huggingface.co/spaces/build-small-hackathon/quantsafe-certifier`.
 - `requirements.txt` lists `gradio`, `numpy`, and all runtime deps.
-- Hardware tier: ZeroGPU powers the batched two-checkpoint exploratory probe; authenticated Modal GPU endpoints power remote debate/judge inference.
+- Hardware/runtime split: ZeroGPU powers the batched two-checkpoint exploratory
+  probe; authenticated Modal GPU endpoints power live debate and judge-cache
+  generation; the Judge Agreement tab displays cached results. The public
+  probe exposes no separate inference-provider API path.
 
 ---
 
@@ -147,10 +164,10 @@ cold-download wait from the final video.
 | phi-2 + GPTQ refusal_rate_delta | -0.90 (loses 90 percentage points) | rtsi_table.csv |
 | phi-2 + GPTQ score | 0.6199, HIGH | rtsi_table.csv |
 | qwen2.5-1.5b + GPTQ score (highest-risk cell) | 0.7864, HIGH | rtsi_table.csv |
-| Inter-judge Cohen's kappa | 0.7484 (RELIABLE) | judge_results.json (Qwen3Guard-Gen-0.6B + Granite-Guardian-3.3-8b) |
-| Judges agree / split | 35/40 agree, 5 split | judge_results.json |
-| Judge curated-label accuracy | Qwen3Guard 85.0%; Granite 92.5% | judge_results.json |
-| Unanimous-panel selective accuracy | 94.3% at 87.5% coverage | judge_results.json |
+| Inter-judge Fleiss' kappa | 0.7929; zone-stratified bootstrap 95% CI 0.6641–0.9239 | judge_results.json (Qwen3Guard-Gen-0.6B + Granite-Guardian-3.3-8b + Llama-3.1-Nemotron-Safety-Guard-8B-v3) |
+| Judges agree / split | 34/40 unanimous, 6 split (all borderline) | judge_results.json |
+| Judge project-label accuracy | Qwen3Guard 85.0%; Granite 92.5%; Nemotron guard 95.0% (highest point estimate; paired McNemar p=1.0 vs Granite) | judge_results.json |
+| Unanimous-panel selective accuracy | 97.1% at 85% coverage | judge_results.json |
 | Fine-tuned semantic refusal classifier | 97.73% accuracy; 0.976 refusal F1 on 441 XSTest responses | Crusadersk/quantsafe-refusal-modernbert/metrics.json |
 | Legacy opener lexicon on same XSTest split | 52.61% accuracy; 0.154 refusal F1 | Crusadersk/quantsafe-refusal-modernbert/metrics.json |
 | Debate example consensus | CONDITIONAL at 0.67 agreement (2 CONDITIONAL, 1 ROUTE) | debate_examples.json (Qwen3-8B + Phi-4-mini-instruct + SmolLM3-3B) |
