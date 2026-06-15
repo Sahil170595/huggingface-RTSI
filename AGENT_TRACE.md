@@ -404,3 +404,51 @@ June 15, 2026.
 - The judge benchmark dataset was republished with the external-label artifact;
   the public agent-trace dataset was synchronized in Hub commit
   `c8ed33032ff4c2ca559b05e60c4923b6ccd0b3be`.
+
+---
+
+# Final Production Release
+
+June 15, 2026.
+
+## Published revisions
+
+- GitHub PR
+  [`#8`](https://github.com/Sahil170595/huggingface-RTSI/pull/8)
+  merged to `main` as
+  `70dbaf9d24cdeca29eabc5767a176de08c004ed5`.
+- Hugging Face Space PR
+  [`#21`](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier/discussions/21)
+  merged the audited source as
+  `379f0f5d497b5f5e142720c1788f77d2f8c16363`.
+- The final 36-second MP4 and WebM demo files were then published directly to
+  the organization Space in verified commit
+  `0692d49ab1d1785f72ae94e8d2f65785fe1736ca`.
+
+## Production verification
+
+- Replaced the organization Space signing secret with the validated private
+  seed whose derived Ed25519 public key is the README-published
+  `9a074a15598fef26f5fbd33e8d604cb6c2372989f164331c11018a83fcd98519`.
+- Added the OpenBMB API key as an organization Space secret; no secret value
+  was written to the repository, trace, dataset, or benchmark artifacts.
+- Issued a production v2 record for `qwen2.5-1.5b` GPTQ. The rendered
+  certificate carried the published public key, and the pinned verifier
+  returned `VALID` with schema and action invariants satisfied.
+- Exercised all six production tabs. The four-vendor BeaverTails table,
+  specialist-guard selective result, prospective NF4 direction check, cached
+  hybrid debate, and public agent-trace link all rendered from the final
+  Space revision.
+- Ran the live Modal + OpenBMB debate. All three providers returned two rounds;
+  the result was `CONDITIONAL` at 2/3 agreement in 27.8 seconds, with no
+  provider-error fallback.
+- Ran the Hugging Face ZeroGPU exploratory probe. It completed over 10 hidden
+  probes and rendered aggregate-only output: RTSI reference projection
+  `0.6859`, baseline refusals 3/10, candidate refusals 4/10, and the separate
+  semantic cross-check at 6/10 versus 7/10.
+- Rechecked the public app at a 390x844 viewport. Navigation, headline,
+  judge links, controls, and score content remained readable without
+  horizontal content loss.
+- Browser console review found no application execution error. Two host-shell
+  metadata requests from Hugging Face returned 400/404 for the Space
+  subdomain/avatar chrome; neither affected the app or its API calls.
