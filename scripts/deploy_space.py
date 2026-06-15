@@ -47,8 +47,8 @@ IGNORE = [
     ".ruff_cache/*",
     "output/*",
     "scripts/_prospective_cache/*",  # raw model completions to harmful probes — never publish
-    # SECURITY: internal competitive-strategy docs — never publish to the Space.
-    # (AGENT_TRACE.md is intentionally NOT excluded — it is a "built in the open" deliverable.)
+    # SECURITY: internal competitive-strategy docs never ship in the Space.
+    # AGENT_TRACE.md is intentionally public for the Sharing is Caring badge.
     "HACKATHON_BRIEF.md",
     "HACKATHON_ORG_PAGE.md",
     # The org token can commit source but cannot negotiate LFS uploads. Demo
@@ -67,6 +67,7 @@ IGNORE = [
     "scripts/publish_release_warnings.py",
     # research/eval scripts — not part of the running Space app
     "scripts/eval_external_judges.py",
+    "scripts/eval_openbmb_minicpm.py",
     "scripts/prospective_modal.py",
     "scripts/prospective_score.py",
 ]
@@ -75,6 +76,7 @@ IGNORE = [
 SECRET_ENV_VARS = [
     "MODAL_ENDPOINT",
     "MODAL_TOKEN",
+    "OPENBMB_API_KEY",
     "GRADIO_CERT_SIGNING_KEY_HEX",
     "HF_TOKEN",
 ]

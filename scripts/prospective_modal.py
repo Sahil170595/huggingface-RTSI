@@ -8,11 +8,8 @@ decoding (do_sample=False, max_new_tokens=256) and completions are written to
 
 NOTE on quantization method:
   Prospective cells use on-the-fly NF4 4-bit quantization via bitsandbytes,
-  NOT published GPTQ/AWQ/GGUF checkpoints.  The RTSI screen measures
-  baseline-relative refusal-shape drift and is quant-method-agnostic by
-  construction; NF4 4-bit and GPTQ-Int4 produce comparable compression
-  ratios so the prospective results remain directly interpretable alongside
-  the frozen 45-cell matrix (which used GPTQ/AWQ/GGUF checkpoints).
+  NOT published GPTQ/AWQ/GGUF checkpoints. The n=2 demonstration is a
+  direction check, not evidence that the frozen thresholds transfer to NF4.
 
 This is a SEPARATE Modal app ("prospective-probe") — it does NOT import or
 modify modal_app.py, rtsi_core.py, features.py, or any substrate file.
@@ -33,8 +30,8 @@ Dependencies added to the Modal image (see _image below):
     bitsandbytes==0.49.2     # NF4 4-bit on A10G
     accelerate>=0.33
     pyyaml>=6.0
-    sentencepiece            # MiniCPM tokenizer
-    protobuf                 # MiniCPM tokenizer
+    sentencepiece
+    protobuf
 """
 
 from __future__ import annotations
@@ -47,7 +44,7 @@ from typing import Any
 import modal
 
 # ---------------------------------------------------------------------------
-# Target configuration  (baseline_repo, trust_remote_code)
+# Target configuration (baseline_repo, trust_remote_code)
 # ---------------------------------------------------------------------------
 # Each tuple is ONE prospective family.  We load the SAME baseline repo twice:
 #   • baseline cell: fp16, no quantization
@@ -55,14 +52,15 @@ import modal
 #
 # No published GPTQ/AWQ checkpoints are needed.
 #
-# trust_remote_code=True is required for MiniCPM4.1 whose modelling code
-# lives in the repo rather than the upstream transformers library.
-
 TARGETS: list[tuple[str, bool]] = [
     ("tiiuae/Falcon3-3B-Instruct", False),
     ("HuggingFaceTB/SmolLM2-1.7B-Instruct", False),
-    ("openbmb/MiniCPM4.1-8B", True),
 ]
+
+MODEL_REVISIONS = {
+    "tiiuae/Falcon3-3B-Instruct": "411bb94318f94f7a5735b77109f456b1e74b42a1",
+    "HuggingFaceTB/SmolLM2-1.7B-Instruct": "31b70e2e869a7173562077fd711b654946d38674",
+}
 
 # ---------------------------------------------------------------------------
 # Probe set path (relative to repo root, resolved at runtime inside Modal)
@@ -291,13 +289,16 @@ class Prober:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
+        revision = MODEL_REVISIONS[model_id]
         print(f"[baseline] loading {model_id} (trust_remote_code={trust_remote_code})")
         tok = AutoTokenizer.from_pretrained(
             model_id,
+            revision=revision,
             trust_remote_code=trust_remote_code,
         )
         mdl = AutoModelForCausalLM.from_pretrained(
             model_id,
+            revision=revision,
             torch_dtype=torch.float16,
             device_map="auto",
             trust_remote_code=trust_remote_code,
@@ -343,6 +344,7 @@ class Prober:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
+        revision = MODEL_REVISIONS[model_id]
         print(f"[nf4] loading {model_id} in NF4 4-bit (trust_remote_code={trust_remote_code})")
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
@@ -352,10 +354,12 @@ class Prober:
         )
         tok = AutoTokenizer.from_pretrained(
             model_id,
+            revision=revision,
             trust_remote_code=trust_remote_code,
         )
         mdl = AutoModelForCausalLM.from_pretrained(
             model_id,
+            revision=revision,
             quantization_config=bnb_config,
             device_map="auto",
             trust_remote_code=trust_remote_code,

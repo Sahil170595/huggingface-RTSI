@@ -13,9 +13,10 @@ ROOT = Path(__file__).resolve().parent.parent
 DATASET_ID = "Crusadersk/quantsafe-judge-benchmark"
 CORPUS_PATH = ROOT / "substrate" / "judge_corpus.json"
 RESULTS_PATH = ROOT / "substrate" / "judge_results.json"
+EXTERNAL_PATH = ROOT / "substrate" / "external_judge_eval.json"
 
 
-def _dataset_card(results: dict, run_name: str) -> str:
+def _dataset_card(results: dict, external: dict, run_name: str) -> str:
     agreement = results["agreement"]
     uncertainty = results["statistical_uncertainty"]
     selective = results["gold_validation"]["selective_consensus"]
@@ -27,6 +28,15 @@ def _dataset_card(results: dict, run_name: str) -> str:
     ]["metrics"]
     kappa_ci = uncertainty["kappa"]
     top_two = uncertainty["top_two_accuracy"]
+    external_reports = {
+        report["family"]: report["metrics"]
+        for report in external["per_judge"]
+    }
+    ext_qwen = external_reports["qwen3guard"]
+    ext_granite = external_reports["granite-guardian"]
+    ext_nemotron = external_reports["nemotron-safety-guard"]
+    ext_minicpm = external_reports["minicpm"]
+    ext_cohort = external["cohort_selective"]
 
     return f"""---
 license: apache-2.0
@@ -42,6 +52,9 @@ tags:
 - judge-agreement
 - quantization
 - nemotron
+- openbmb
+- minicpm
+- beavertails
 - granite-guardian
 - qwen3guard
 - build-small-hackathon
@@ -67,6 +80,8 @@ and the broader methodology in
 - `judge_corpus.jsonl`: 12 clear-safe, 12 clear-unsafe, and 16 intentionally
   borderline items with project labels.
 - `judge_verdicts.json`: promoted aggregate results and provenance.
+- `external_judge_eval.json`: deterministic BeaverTails N=400 evaluation
+  against third-party human crowd labels.
 - `runs/{run_name}`: immutable run manifest with code/corpus/model revisions,
   generation settings, reported precision, elapsed time, verdict digest, and
   per-output SHA-256 hashes.
@@ -92,6 +107,24 @@ The Nemotron guard has the highest point estimate by one item. The paired test
 does not statistically separate it from Granite on this small corpus. The
 kappa interval also crosses the predeclared 0.70 `RELIABLE` threshold, so the
 band is a point-estimate classification rather than a certainty claim.
+
+## External-label benchmark
+
+The same deterministic BeaverTails `30k_test` sample (N=400, seed 20260615)
+was evaluated by three specialist guards and OpenBMB MiniCPM4.1-8B:
+
+| Model | Role | Accuracy | Macro F1 | Coverage |
+|---|---|---:|---:|---:|
+| Qwen3Guard-Gen-0.6B | specialist guard | {ext_qwen['accuracy']:.1%} | {ext_qwen['macro_f1']:.3f} | {ext_qwen['coverage']:.1%} |
+| Granite Guardian 3.3 8B | specialist guard | {ext_granite['accuracy']:.1%} | {ext_granite['macro_f1']:.3f} | {ext_granite['coverage']:.1%} |
+| Nemotron Safety Guard 8B v3 | specialist guard | {ext_nemotron['accuracy']:.1%} | {ext_nemotron['macro_f1']:.3f} | {ext_nemotron['coverage']:.1%} |
+| MiniCPM4.1-8B | general-reasoning cross-check | {ext_minicpm['accuracy']:.1%} | {ext_minicpm['macro_f1']:.3f} | {ext_minicpm['coverage']:.1%} |
+
+When all three specialist guards agree, accuracy is
+**{ext_cohort['accuracy']:.1%}** at **{ext_cohort['coverage']:.1%}** coverage.
+MiniCPM is not folded into that selective-consensus result. Its hosted-provider
+revision is unreported; the artifact records the pinned Hub reference and raw
+output digest without publishing raw completions.
 
 ## Annotation and lineage
 
@@ -156,12 +189,13 @@ def main() -> int:
     corpus_doc = json.loads(CORPUS_PATH.read_text(encoding="utf-8"))
     corpus = corpus_doc["items"] if isinstance(corpus_doc, dict) else corpus_doc
     results = json.loads(RESULTS_PATH.read_text(encoding="utf-8"))
+    external = json.loads(EXTERNAL_PATH.read_text(encoding="utf-8"))
 
     with tempfile.TemporaryDirectory(prefix="quantsafe-judge-dataset-") as tmp:
         root = Path(tmp)
         (root / "runs").mkdir()
         (root / "README.md").write_text(
-            _dataset_card(results, run_path.name),
+            _dataset_card(results, external, run_path.name),
             encoding="utf-8",
         )
         (root / "judge_corpus.jsonl").write_text(
@@ -176,6 +210,11 @@ def main() -> int:
             + "\n",
             encoding="utf-8",
         )
+        (root / "external_judge_eval.json").write_text(
+            json.dumps(external, indent=2, ensure_ascii=False, allow_nan=False)
+            + "\n",
+            encoding="utf-8",
+        )
         (root / "runs" / run_path.name).write_bytes(run_path.read_bytes())
 
         print(f"Prepared {len(corpus)} rows and run {run_path.name}")
@@ -184,7 +223,7 @@ def main() -> int:
                 repo_id=DATASET_ID,
                 repo_type="dataset",
                 folder_path=str(root),
-                commit_message="docs: publish auditable three-guard benchmark",
+                commit_message="docs: add external guard and MiniCPM benchmark",
             )
             print(f"Uploaded to {DATASET_ID}")
         else:

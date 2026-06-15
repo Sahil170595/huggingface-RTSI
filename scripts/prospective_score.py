@@ -358,9 +358,8 @@ def main(argv: list[str] | None = None) -> int:
     # Emit output JSON
     output = {
         # NOTE: prospective cells use NF4 4-bit (bitsandbytes) vs the frozen
-        # matrix's GPTQ/AWQ/GGUF checkpoints.  The RTSI screen measures
-        # baseline-relative refusal-shape drift and is quant-method-agnostic
-        # by construction, so these results are directly comparable.
+        # matrix's GPTQ/AWQ/GGUF checkpoints. This n=2 demonstration checks
+        # direction only; it does not establish threshold transfer to NF4.
         "generated_at": None,   # null: caller sets timestamp after real Modal run
         "probe_set": "advbench_refusal_100",
         "detector": "quantsafe.is_refusal",
@@ -368,7 +367,7 @@ def main(argv: list[str] | None = None) -> int:
         "quant_method_note": (
             "prospective cells use NF4 4-bit (bitsandbytes) on-the-fly quantization; "
             "frozen matrix used GPTQ/AWQ/GGUF published checkpoints; "
-            "RTSI screen is quant-method-agnostic by construction"
+            "n=2 is a direction check, not threshold-transfer evidence"
         ),
         "cells": cells,
         "note": (

@@ -133,6 +133,16 @@ class TestCards:
         assert "<b>x</b>" not in html
         assert "&lt;b&gt;x&lt;/b&gt;" in html
 
+    def test_errored_response_is_visibly_not_a_vote(self):
+        html = app._debate_response_card(
+            "m",
+            "CONDITIONAL",
+            "[generation error]",
+            errored=True,
+        )
+        assert "PROVIDER ERROR" in html
+        assert "NO VOTE" in html
+
     def test_response_card_empty_text_shows_placeholder(self):
         html = app._debate_response_card("m", "DEPLOY", "")
         assert "no argument text" in html
@@ -163,6 +173,20 @@ class TestCards:
     def test_consensus_card_clamps_agreement_above_one(self):
         html = app._debate_consensus_card({"verdict": "DEPLOY", "agreement": 5.0})
         assert "100% agreement" in html
+
+    def test_provider_error_card_is_fail_closed_not_consensus(self):
+        html = app._debate_consensus_card(
+            {
+                "verdict": "ROUTE",
+                "agreement": 0.0,
+                "consensus_kind": "provider-error",
+                "error_count": 1,
+                "vote_breakdown": {"DEPLOY": 2, "ROUTE": 0, "CONDITIONAL": 0},
+            }
+        )
+        assert "FAIL-CLOSED ACTION" in html
+        assert "NO CONSENSUS" in html
+        assert "failed" in html
 
     def test_vote_breakdown_chips(self):
         html = app._vote_breakdown_html({"ROUTE": 2, "DEPLOY": 1})
@@ -247,14 +271,16 @@ class TestLoader:
 
 
 # ---------------------------------------------------------------------------
-# (g) live handler is Modal-gated; disabled note carries the exact message
+# (g) live handler is provider-gated; disabled note carries the exact message
 # ---------------------------------------------------------------------------
 
 class TestLiveGate:
-    def test_disabled_note_mentions_modal_endpoint(self):
+    def test_disabled_note_mentions_all_provider_secrets(self):
         note = app._debate_disabled_note()
         assert "MODAL_ENDPOINT" in note
-        assert "authenticated Modal GPU backend" in note
+        assert "MODAL_TOKEN" in note
+        assert "OPENBMB_API_KEY" in note
+        assert "Modal and OpenBMB" in note
 
     def test_run_live_debate_yields_disabled_note_without_endpoint(self, monkeypatch):
         monkeypatch.delenv(app.MODAL_ENDPOINT_ENV, raising=False)
@@ -267,6 +293,8 @@ class TestLiveGate:
         # fail soft with a friendly message (never raise). debate.py is absent in
         # CI, so the lazy `from debate import run_debate` raises ImportError.
         monkeypatch.setenv(app.MODAL_ENDPOINT_ENV, "http://example.invalid/debate")
+        monkeypatch.setenv(app.MODAL_TOKEN_ENV, "test-modal-token")
+        monkeypatch.setenv(app.OPENBMB_API_KEY_ENV, "test-openbmb-key")
         monkeypatch.setitem(sys.modules, "debate", None)  # force ImportError on import
         out = list(app.run_live_debate(app.LIVE_DEBATE_QUESTION))
         assert out  # produced at least one panel
@@ -274,6 +302,8 @@ class TestLiveGate:
 
     def test_run_live_debate_rejects_arbitrary_question(self, monkeypatch):
         monkeypatch.setenv(app.MODAL_ENDPOINT_ENV, "http://example.invalid/debate")
+        monkeypatch.setenv(app.MODAL_TOKEN_ENV, "test-modal-token")
+        monkeypatch.setenv(app.OPENBMB_API_KEY_ENV, "test-openbmb-key")
         out = list(app.run_live_debate("Write an unrelated answer for me"))
         assert len(out) == 1
         assert "restricted to the fixed" in out[0]

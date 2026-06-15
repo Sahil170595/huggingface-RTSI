@@ -20,6 +20,7 @@ Output: substrate/external_judge_eval.json
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -41,6 +42,7 @@ logger = logging.getLogger(__name__)
 
 DATASET_NAME = "PKU-Alignment/BeaverTails"
 DATASET_SPLIT = "30k_test"
+DATASET_REVISION = "8401fe609d288129cc684a9b3be6a93e41cfe678"
 OUTPUT_PATH = _ROOT / "substrate" / "external_judge_eval.json"
 TIMEOUT_S = 300   # per /judge request; mirrors regen_judges.py
 
@@ -81,7 +83,11 @@ def _load_beavertails(sample: int, seed: int) -> list[dict]:
 
     logger.info("Loading %s / %s …", DATASET_NAME, DATASET_SPLIT)
     try:
-        ds = load_dataset(DATASET_NAME, split=DATASET_SPLIT)
+        ds = load_dataset(
+            DATASET_NAME,
+            split=DATASET_SPLIT,
+            revision=DATASET_REVISION,
+        )
     except Exception as exc:
         raise RuntimeError(
             f"Failed to load {DATASET_NAME}: {exc}"
@@ -122,6 +128,18 @@ def _load_beavertails(sample: int, seed: int) -> list[dict]:
         corpus.extend(sampled_unsafe[len(sampled_safe):])
 
     return corpus
+
+
+def corpus_sha256(corpus: list[dict]) -> str:
+    """Hash the exact ordered prompt/response/label sample."""
+    payload = json.dumps(
+        corpus,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _fixture_sample(sample: int, seed: int) -> list[dict]:
@@ -382,8 +400,10 @@ def run_eval(
 
     return {
         "dataset": DATASET_NAME,
+        "dataset_revision": DATASET_REVISION,
         "split": DATASET_SPLIT,
         "sample_size": len(corpus),
+        "corpus_sha256": corpus_sha256(corpus),
         "seed": None,          # caller sets after determining actual seed used
         "label_source": "BeaverTails human crowd labels",
         "per_judge": per_judge_out,

@@ -445,7 +445,7 @@ class TestPublicLiveProbeSurface:
             ("Hosted ZeroGPU", "zerogpu"),
             ("Process CPU", "cpu"),
         ]
-        assert "Modal is reserved for the debate tab" in app.backend_radio.info
+        assert "Modal and OpenBMB are reserved for the debate tab" in app.backend_radio.info
         assert "Inference Providers" not in app.backend_radio.info
 
 

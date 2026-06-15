@@ -14,6 +14,7 @@ tags:
   - sponsor:openai
   - sponsor:modal
   - sponsor:nvidia
+  - sponsor:openbmb
   - achievement:offbrand
   - achievement:welltuned
   - achievement:sharing
@@ -48,11 +49,11 @@ models:
   - Qwen/Qwen2.5-1.5B-Instruct
   - meta-llama/Llama-3.2-1B-Instruct
   - Qwen/Qwen3-8B
-  - microsoft/Phi-4-mini-instruct
   - HuggingFaceTB/SmolLM3-3B
   - Qwen/Qwen3Guard-Gen-0.6B
   - ibm-granite/granite-guardian-3.3-8b
   - nvidia/Llama-3.1-Nemotron-Safety-Guard-8B-v3
+  - openbmb/MiniCPM4.1-8B
   - Crusadersk/quantsafe-refusal-modernbert
 ---
 
@@ -75,7 +76,7 @@ proof that those exact weights generated the historical measurement.
 | [`phi-2-gptq-4bit`](https://huggingface.co/Crusadersk/phi-2-gptq-4bit) | [`6385e88d733f…`](https://huggingface.co/Crusadersk/phi-2-gptq-4bit/tree/6385e88d733fe95b67dc6d18f264b83c6462e681) | RTSI `0.6199` (`HIGH`) | `ROUTE` |
 | [`qwen2.5-1.5b-gptq-4bit`](https://huggingface.co/Crusadersk/qwen2.5-1.5b-gptq-4bit) | [`4e1c7d4d78a3…`](https://huggingface.co/Crusadersk/qwen2.5-1.5b-gptq-4bit/tree/4e1c7d4d78a3fbb82742207baa7ac305bd836cb5) | RTSI `0.7864` (`HIGH`, matrix maximum) | `ROUTE` |
 
-[Open the Space](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier) · [Watch the 36-second judge demo](demo/quantsafe-demo.webm) · [Download the social-ready MP4](demo/quantsafe-demo.mp4) · [Browse the GitHub source](https://github.com/Sahil170595/huggingface-RTSI) · [Browse the Space source](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier/tree/main) · [Read the paper](https://arxiv.org/abs/2606.10154) · [Field notes](FIELD_NOTES.md) · [Judge benchmark dataset](https://huggingface.co/datasets/Crusadersk/quantsafe-judge-benchmark) · [Adversarial audit](SECURITY_AUDIT.md)
+[Open the Space](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier) · [Watch the 36-second judge demo](demo/quantsafe-demo.webm) · [Download the social-ready MP4](demo/quantsafe-demo.mp4) · [Browse the GitHub source](https://github.com/Sahil170595/huggingface-RTSI) · [Browse the Space source](https://huggingface.co/spaces/build-small-hackathon/quantsafe-certifier/tree/main) · [Read the paper](https://arxiv.org/abs/2606.10154) · [Field notes](FIELD_NOTES.md) · [Agent trace](AGENT_TRACE.md) · [Judge benchmark dataset](https://huggingface.co/datasets/Crusadersk/quantsafe-judge-benchmark) · [Adversarial audit](SECURITY_AUDIT.md)
 
 **Built & audited in the open.** The full agent build/audit trace is published at [Crusadersk/quantsafe-agent-trace](https://huggingface.co/datasets/Crusadersk/quantsafe-agent-trace).
 
@@ -132,15 +133,31 @@ The absolute deltas are normalized across the reference matrix and combined usin
 - Qwen3Guard-Gen-0.6B reaches **85.0%** project-label accuracy, Granite Guardian **92.5%**, and NVIDIA Llama-3.1-Nemotron-Safety-Guard-8B-v3 **95.0%**, the highest point estimate on this 40-item project-labeled corpus; the exact paired comparison with Granite is **McNemar p=1.0**
 - Unanimous non-unclear judge decisions cover **85%** of the corpus and are **97.1%** accurate against the project-curated labels
 - The corpus, all three judges' verdicts, and this comparison are published as an open, citable benchmark: [`Crusadersk/quantsafe-judge-benchmark`](https://huggingface.co/datasets/Crusadersk/quantsafe-judge-benchmark)
-- **External-labeled judge benchmark** (PKU-Alignment/BeaverTails 30k_test, N=400, seed 20260615, third-party human crowd labels): Qwen3Guard-Gen-0.6B 84.0% accuracy [80.1–87.3], macro-F1 0.854, coverage 96.8%; Granite-Guardian-3.3-8B 84.75% [80.9–87.9], macro-F1 0.847, coverage 100%; Nemotron-Safety-Guard-8B-v3 81.0% [76.9–84.5], macro-F1 0.808, coverage 100%; three-guard unanimous (selective consensus) 89.76% [86.0–92.6] at 83% coverage. These accuracies are measured against external third-party human labels (BeaverTails), not the project's own 40-item corpus, directly addressing the label-circularity limitation. On this benchmark the 0.6B Qwen3Guard matches the 8B Granite Guardian and exceeds the 8B Nemotron guard, supporting the small-model design.
+- **External-labeled judge benchmark** (PKU-Alignment/BeaverTails `30k_test`, N=400, seed 20260615, third-party human crowd labels): Qwen3Guard-Gen-0.6B 84.0% accuracy [80.1–87.3], macro-F1 0.854, coverage 96.8%; Granite-Guardian-3.3-8B 84.75% [80.9–87.9], macro-F1 0.847, coverage 100%; Nemotron-Safety-Guard-8B-v3 81.0% [76.9–84.5], macro-F1 0.808, coverage 100%; OpenBMB MiniCPM4.1-8B 74.5% [70.0–78.5], macro-F1 0.742, coverage 100%. The selective consensus remains deliberately restricted to the three purpose-built guards: 89.76% [86.0–92.6] at 83% coverage. MiniCPM is reported separately as a general-reasoning moderation cross-check, not folded into the specialist cohort.
 - The fine-tuned 149.6M-parameter semantic refusal cross-check reaches **97.73% accuracy / 0.976 refusal F1** on 441 held-out XSTest responses, versus **52.61% / 0.154** for the legacy 13-opener lexicon — which is the small-model refusal-shape feature extractor applied out-of-domain to GPT-4 text, so this gap reflects domain mismatch as much as fine-tuning gain
-- Cached three-model debate reaches **CONDITIONAL** at **0.67 agreement**, a genuine 2/3 majority
+- A real two-provider debate across Qwen3-8B (Modal), MiniCPM4.1-8B (OpenBMB), and SmolLM3-3B (Modal) reaches **ROUTE** at **0.67 agreement**, a genuine 2/3 majority. MiniCPM changes from DEPLOY to ROUTE after reading the other models' arguments.
 
 These are screening results on a fixed reference matrix, not a claim that the screen replaces a full safety evaluation. A HIGH result explicitly routes to the expensive safety path.
 
-**Prospective transfer demonstration** (NF4 4-bit, bitsandbytes; frozen 45-cell substrate; 100 AdvBench probes; scored one cell at a time): Falcon3-3B-Instruct (TII) RTSI 0.0018, LOW, refusal_rate_delta +0.02, material_loss False; SmolLM2-1.7B-Instruct (HuggingFaceTB) RTSI 0.2408, MODERATE, refusal_rate_delta −0.10, material_loss True. As a prospective out-of-distribution check (a demonstration, not a powered AUC: n=2 cells), the frozen screen was applied blind to two families absent from the 45-cell matrix and to a quantization method (NF4) it was never calibrated on. It correctly cleared Falcon3-3B (no refusal loss, LOW) and flagged SmolLM2-1.7B (a measured 10-point refusal-rate drop, MODERATE / material-loss). The RTSI screen scores baseline-relative refusal-shape drift and is quantization-method-agnostic by construction.
+**Prospective transfer demonstration** (NF4 4-bit, bitsandbytes; frozen 45-cell substrate; 100 AdvBench probes; scored one cell at a time): Falcon3-3B-Instruct (TII) RTSI 0.0018, LOW, refusal_rate_delta +0.02, material_loss False; SmolLM2-1.7B-Instruct (HuggingFaceTB) RTSI 0.2408, MODERATE, refusal_rate_delta −0.10, material_loss True. This n=2 out-of-distribution demonstration is directionally consistent with the measured refusal changes, but it is not a powered transfer study and does not establish that the thresholds generalize to NF4.
 
-**MiniCPM compatibility note:** OpenBMB MiniCPM4.1-8B was also evaluated as a fourth (reasoning-model) judge and a prospective subject; its trust_remote_code modeling code (pinned revision) imports is_torch_fx_available, which is removed in the pinned transformers 5.12.0, so it fails to load under this stack. We document this incompatibility rather than downgrade the pinned runtime, and exclude MiniCPM from the live results.
+## OpenBMB evidence
+
+OpenBMB MiniCPM4.1-8B is load-bearing in two public features. First, the
+official Build Small hosted API evaluated the same deterministic 400-row
+BeaverTails sample as the three specialist guards, reaching **74.5% accuracy**
+and **0.742 macro-F1**. Second, MiniCPM is one of the three live constitutional
+debaters and changed its stance from DEPLOY to ROUTE after critique in the
+published run.
+
+The Hub reference is pinned to revision
+`3a8dfed9c79a45e07dbff95bcd49d792343fa1a3`. The hosted provider does not
+report its served weight revision, so the artifact records that provider
+revision as unreported rather than claiming exact runtime-weight identity. The
+API key is held only as a Space secret, and the live feature sends only the
+fixed de-identified deployment question. OpenBMB published the shared
+hackathon endpoint as HTTP-only and issued a shared challenge token; the
+transport limitation is recorded in the benchmark artifact.
 
 ## Llama Champion evidence
 
@@ -162,7 +179,7 @@ llama.cpp.
 2. **Exploratory live probe**: choose a pair from four live small-model checkpoint options and compare them over a held-internal probe set. This is explicitly out-of-domain for calibrated RTSI unless the pair is a matched baseline and quantized checkpoint.
 3. **Judge Agreement**: inspect fixed-corpus agreement and project-label accuracy for three judge models from distinct families: Qwen3Guard-Gen-0.6B, Granite Guardian 3.3 8B, and NVIDIA Llama-3.1-Nemotron-Safety-Guard-8B-v3.
 4. **Signed Screening Record**: create a tamper-evident release-screen record covering the artifact revision, evidence hashes, score, band, supporting cohort-level benchmark result, and release-gate action.
-5. **Constitutional Debate**: replay or run a Modal-backed debate for contested MODERATE/MIXED cases.
+5. **Constitutional Debate**: replay or run a Modal + OpenBMB debate for contested MODERATE/MIXED cases.
 6. **About**: review the method, thresholds, calibration, and limitations.
 
 ## Small-model compliance
@@ -176,7 +193,7 @@ Every model QuantSafe runs clears that cap comfortably. The largest is
 | Exploratory live probe | Four checkpoint options: Qwen3-0.6B, Qwen3-1.7B, Qwen2.5-1.5B-Instruct, and Llama 3.2 1B Instruct; the selected pair is batched under one `@spaces.GPU` allocation | 1.7B |
 | Semantic refusal cross-check | QuantSafe Refusal ModernBERT (149.6M, fine-tuned from ModernBERT-base) | 0.150B |
 | Safety judges | Qwen3Guard-Gen-0.6B, Granite Guardian 3.3 8B, NVIDIA Llama-3.1-Nemotron-Safety-Guard-8B-v3 | 8.171B |
-| Constitutional debate | Qwen3-8B, Phi-4-mini-instruct, SmolLM3-3B | Qwen3-8B: 8,190,735,360 |
+| Constitutional debate | Qwen3-8B, MiniCPM4.1-8B, SmolLM3-3B | Qwen3-8B: 8,190,735,360 |
 
 The 0.6B Qwen guard is deliberate rather than cosmetic: the
 [Qwen3Guard report](https://huggingface.co/papers/2510.14276) reports an English
@@ -204,7 +221,7 @@ It was trained on 37,934 balanced WildGuardMix prompt/response pairs and tested
 on 441 unambiguous XSTest GPT-4 responses. It remains a separate supporting
 signal rather than silently changing the frozen RTSI calibration.
 
-## Modal runtime
+## Hosted runtime
 
 Modal is part of the production runtime, not a placeholder. `modal_app.py`
 serves authenticated `/generate` and `/judge` endpoints on GPU-backed,
@@ -212,6 +229,8 @@ per-model container pools. Within each debate round, the Space fans model calls
 out concurrently and restores deterministic model order before consensus. The
 Judge Agreement tab itself displays a fixed cached benchmark; `/judge` is used
 to regenerate that benchmark, not to cross-check each score or certificate.
+MiniCPM4.1-8B runs through the official OpenBMB Build Small API in parallel with
+the two Modal debaters.
 
 The exploratory probe uses the Space's ZeroGPU hardware directly. One
 `@spaces.GPU(duration=60)` call holds a single RTX Pro 6000 allocation while
@@ -220,18 +239,19 @@ re-enter the shared GPU queue for every prompt. Modal remains the separate,
 authenticated multi-model debate and judge backend.
 
 The hosted app is cloud-dependent: the exploratory probe uses Hugging Face
-ZeroGPU, while live debate and judge-cache generation use Modal. The public
-probe intentionally exposes no separate inference-provider API path. Static
-scoring, cached evidence, and local signature verification do not make the
-complete hosted workflow off-grid.
+ZeroGPU; live debate uses Modal plus OpenBMB; judge-cache generation uses
+Modal. Static scoring, cached evidence, and local signature verification do
+not make the complete hosted workflow off-grid.
 
-The endpoint requires `Authorization: Bearer $MODAL_TOKEN`; unknown models are rejected by an allowlist. Model downloads are pinned to immutable Hugging Face commit SHAs in `model_revisions.py`.
+The Modal endpoint requires `Authorization: Bearer $MODAL_TOKEN`; unknown
+models are rejected by an allowlist. The OpenBMB client requires
+`OPENBMB_API_KEY`. Local and Modal model downloads are pinned to immutable
+Hugging Face commit SHAs in `model_revisions.py`.
 
-In one measured production run, the parallel Modal debate completed two rounds
-across three model families in **34.8 seconds**, versus **195.3 seconds** for the
-earlier sequential cached run. That observed 5.6× improvement is not a general
-latency guarantee; it demonstrates why the per-model Modal container topology
-is load-bearing for the interactive workflow.
+The published hybrid run completed two rounds across Modal and OpenBMB in
+**49.3 seconds**. An earlier all-Modal parallel run completed in 34.8 seconds,
+versus 195.3 seconds for the original sequential cache. These are individual
+warm-runtime observations, not latency guarantees.
 
 ## Agentic escalation
 
@@ -255,13 +275,14 @@ remains stable.
 
 ## Reproducibility and privacy
 
-- All local and Modal `from_pretrained` calls use audited 40-character commit revisions, including the fine-tuned classifier.
+- All local and Modal `from_pretrained` calls use audited 40-character commit revisions, including the fine-tuned classifier. The OpenBMB artifact separately records a pinned Hub reference and an unreported provider revision.
 - The 51-row study comprises 6 baselines and 45 non-baseline cells; the signed screening substrate and cached judge/debate outputs are versioned under `substrate/`.
 - Judge regeneration writes an immutable manifest before explicit promotion. The current run is [`judge-run-20260615T002149Z-3cf88d864691.json`](substrate/judge_runs/judge-run-20260615T002149Z-3cf88d864691.json), bound to code revision `00f1a8d`, the corpus SHA-256, exact model revisions, generation settings, reported precision, and raw-output hashes.
+- The external BeaverTails comparison is bound to dataset revision `8401fe609d288129cc684a9b3be6a93e41cfe678` and ordered-sample SHA-256 `c5e4c69b0debf8bfc8c14cab6b610fd749c7724804b82587bdb4ca26d5bb3c84`.
 - Probe prompts and raw live completions are never rendered in the UI.
 - Version 2 records bind the publisher's release target and sign a content-addressed evidence manifest. The verifier enforces v2 schema, artifact mapping, and band/action consistency in addition to Ed25519 issuer verification.
 - Records are verified against this Space's pinned issuer public key (`9a074a15598fef26f5fbd33e8d604cb6c2372989f164331c11018a83fcd98519`); see [Verify a signed record](#verify-a-signed-record) and the Foreign re-sign test.
-- The private signing key and Modal bearer token live only in deployment secrets.
+- The private signing key, Modal bearer token, and OpenBMB API key live only in deployment secrets.
 
 ## Build Small submission status
 

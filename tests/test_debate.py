@@ -187,6 +187,34 @@ class TestComputeConsensus:
         assert out["verdict"] == STANCE_CONDITIONAL
         assert out["agreement"] == 1.0
 
+    def test_errored_response_is_excluded_and_fails_closed(self):
+        final = [
+            {
+                "model": "openbmb",
+                "stance": STANCE_CONDITIONAL,
+                "text": "[generation error]",
+                "errored": True,
+            },
+            {
+                "model": "modal-a",
+                "stance": STANCE_DEPLOY,
+                "text": "",
+                "errored": False,
+            },
+            {
+                "model": "modal-b",
+                "stance": STANCE_DEPLOY,
+                "text": "",
+                "errored": False,
+            },
+        ]
+        out = compute_consensus(final)
+        assert out["verdict"] == STANCE_ROUTE
+        assert out["vote_breakdown"][STANCE_CONDITIONAL] == 0
+        assert out["consensus_kind"] == "provider-error"
+        assert out["error_count"] == 1
+        assert out["valid_votes"] == 2
+
     def test_empty_final_round(self):
         out = compute_consensus([])
         assert out["verdict"] == DEFAULT_STANCE
@@ -268,7 +296,7 @@ class TestConsensusLabel:
 
     def test_cached_substrate_example_reaches_consensus(self):
         # The bundled debate example is the SOTA 3-model cohort (Qwen3-8B +
-        # Phi-4-mini + SmolLM3-3B): a genuine 2/3 majority for CONDITIONAL, so
+        # Three-model cached cohort: a genuine 2/3 majority, so
         # it labels CONSENSUS with no safety-first tie-break. An odd cohort
         # guarantees a strict majority. Read-only: the cache is NOT edited.
         cached = json.loads(
@@ -735,17 +763,38 @@ class TestErroredStance:
         mr_events = [e for e in events if e["type"] == "model_response"]
         assert all(e["errored"] is False for e in mr_events)
 
-    def test_all_errored_still_has_valid_consensus(self, monkeypatch):
-        # Even if every model errors, the result is a valid dict (all DEFAULT_STANCE).
+    def test_all_errored_fails_closed_without_counting_votes(self, monkeypatch):
         def _all_fail(model_id, prompt, backend="local", max_new_tokens=220):
             raise RuntimeError("gpu gone")
 
         monkeypatch.setattr(debate, "generate", _all_fail)
         out = run_debate("q", models=["m1", "m2"], rounds=1)
-        assert out["final_verdict"] in STANCES
+        assert out["final_verdict"] == STANCE_ROUTE
+        assert out["consensus"]["consensus_kind"] == "provider-error"
+        assert sum(out["consensus"]["vote_breakdown"].values()) == 0
         # Every response is errored.
         for resp in out["rounds"][0]["responses"]:
             assert resp["errored"] is True
+
+    def test_hybrid_reports_only_successful_providers(self, monkeypatch):
+        def _selective(model_id, prompt, backend="local", max_new_tokens=220):
+            if model_id == debate.OPENBMB_MINICPM_MODEL_ID:
+                raise RuntimeError("provider down")
+            return "STANCE: DEPLOY"
+
+        monkeypatch.setattr(debate, "generate", _selective)
+        out = run_debate(
+            "q",
+            models=[
+                "Qwen/Qwen3-8B",
+                debate.OPENBMB_MINICPM_MODEL_ID,
+                "HuggingFaceTB/SmolLM3-3B",
+            ],
+            backend="hybrid",
+            rounds=1,
+        )
+        assert out["providers"] == ["Modal"]
+        assert out["provider_errors"] == [debate.OPENBMB_MINICPM_MODEL_ID]
 
 
 # ---------------------------------------------------------------------------
@@ -761,6 +810,44 @@ class TestBackendContract:
         monkeypatch.delenv("MODAL_ENDPOINT", raising=False)
         with pytest.raises(EnvironmentError, match="MODAL_ENDPOINT"):
             generate("m1", "p", backend="modal")
+
+    def test_hybrid_routes_minicpm_to_openbmb(self, monkeypatch):
+        monkeypatch.setattr(
+            debate,
+            "_generate_openbmb",
+            lambda model, prompt, tokens: f"openbmb:{model}:{tokens}",
+        )
+        monkeypatch.setattr(
+            debate,
+            "_generate_modal",
+            lambda *_args: pytest.fail("Modal should not receive MiniCPM"),
+        )
+        out = generate(
+            debate.OPENBMB_MINICPM_MODEL_ID,
+            "p",
+            backend="hybrid",
+            max_new_tokens=77,
+        )
+        assert out == f"openbmb:{debate.OPENBMB_MINICPM_MODEL_ID}:77"
+
+    def test_hybrid_routes_other_models_to_modal(self, monkeypatch):
+        monkeypatch.setattr(
+            debate,
+            "_generate_modal",
+            lambda model, prompt, tokens: f"modal:{model}:{tokens}",
+        )
+        monkeypatch.setattr(
+            debate,
+            "_generate_openbmb",
+            lambda *_args: pytest.fail("OpenBMB should receive only MiniCPM"),
+        )
+        assert generate("Qwen/Qwen3-8B", "p", backend="hybrid") == (
+            "modal:Qwen/Qwen3-8B:220"
+        )
+
+    def test_openbmb_backend_rejects_non_minicpm(self):
+        with pytest.raises(ValueError, match="restricted"):
+            debate._generate_openbmb("other/model", "p", 10)
 
     def test_constitution_is_nonempty_constant(self):
         assert isinstance(CONSTITUTION, str)

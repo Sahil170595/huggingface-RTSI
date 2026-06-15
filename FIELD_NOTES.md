@@ -46,29 +46,36 @@ The workflow then adds four checks around that score:
   WildGuardMix pairs reaches 97.73% accuracy and 0.976 refusal F1 on 441
   external XSTest responses. The legacy opener lexicon reaches 52.61% and
   0.154 on the same responses.
-- A three-model debate produced a strict 2/3 CONDITIONAL majority for the cached contested example.
+- A hybrid three-model debate produced a strict 2/3 ROUTE majority. MiniCPM
+  changed from DEPLOY to ROUTE after reading the other models' arguments.
 - Per-model Modal containers made remote debate turns naturally parallelizable.
 - A single ZeroGPU allocation now batches both live checkpoints across the full
   exploratory probe set instead of queueing once per prompt.
 - The 34-cell GGUF slice was run through llama.cpp via Ollama, covering the
   Q2_K through Q8_0 ladder before normalization into the matched matrix.
-- **External-labeled judge benchmark** (PKU-Alignment/BeaverTails 30k_test, N=400, seed 20260615, third-party human crowd labels): Qwen3Guard-Gen-0.6B 84.0% accuracy [80.1–87.3], macro-F1 0.854, coverage 96.8%; Granite-Guardian-3.3-8B 84.75% [80.9–87.9], macro-F1 0.847, coverage 100%; Nemotron-Safety-Guard-8B-v3 81.0% [76.9–84.5], macro-F1 0.808, coverage 100%; three-guard unanimous 89.76% [86.0–92.6] at 83% coverage. These accuracies are measured against external third-party human labels (BeaverTails), not the project's own 40-item corpus, directly addressing the label-circularity limitation. On this benchmark the 0.6B Qwen3Guard matches the 8B Granite Guardian and exceeds the 8B Nemotron guard, supporting the small-model design.
-- **Prospective NF4 transfer** (demonstration, n=2 cells, not a powered AUC): The frozen screen was applied blind to two families absent from the 45-cell matrix using NF4 4-bit (bitsandbytes) on-the-fly quantization, a method it was never calibrated on. It correctly cleared Falcon3-3B-Instruct (TII; RTSI 0.0018, LOW, refusal_rate_delta +0.02, no material loss) and flagged SmolLM2-1.7B-Instruct (HuggingFaceTB; RTSI 0.2408, MODERATE, refusal_rate_delta −0.10, material_loss True). As a prospective out-of-distribution check (a demonstration, not a powered AUC: n=2 cells), the frozen screen was applied blind to two families absent from the 45-cell matrix and to a quantization method (NF4) it was never calibrated on. It correctly cleared Falcon3-3B (no refusal loss, LOW) and flagged SmolLM2-1.7B (a measured 10-point refusal-rate drop, MODERATE / material-loss). The RTSI screen scores baseline-relative refusal-shape drift and is quantization-method-agnostic by construction.
+- **External-labeled judge benchmark** (PKU-Alignment/BeaverTails `30k_test`, N=400, seed 20260615): Qwen3Guard 84.0%, Granite Guardian 84.75%, Nemotron 81.0%, and MiniCPM4.1-8B 74.5%. The 89.76%-accuracy selective consensus at 83% coverage uses only the three specialist guards. MiniCPM is a separate general-reasoning cross-check.
+- **Prospective NF4 transfer** (demonstration, n=2 cells, not a powered AUC): the frozen screen assigned Falcon3-3B-Instruct RTSI 0.0018 LOW with no measured refusal loss and SmolLM2-1.7B-Instruct RTSI 0.2408 MODERATE with a measured 10-point refusal-rate drop. This is directionally consistent evidence, not proof that the thresholds transfer to NF4.
 
 ## Engineering lessons
 
 The first Modal implementation described parallel containers but called them sequentially from the debate engine. The audit corrected that mismatch by fanning out remote model calls within each round while retaining deterministic response order for consensus and cached output.
 
-An end-to-end production run through the public Space completed two rounds across three models in **34.8 seconds**. The earlier cached sequential run recorded **195.3 seconds**. This is one observed warm-runtime comparison, not a general latency guarantee, but it confirms that the Space now uses the Modal container topology it documents.
+The published hybrid run completed two rounds across Modal and OpenBMB in
+**49.3 seconds**. An earlier all-Modal parallel run completed in 34.8 seconds;
+the original sequential cache recorded 195.3 seconds. These are individual
+warm-runtime observations, not general latency guarantees.
 
 The runtime split is deliberately explicit. Hugging Face ZeroGPU runs the
-batched exploratory probe. Authenticated Modal per-model GPU containers run
-live debate and regenerate the fixed judge benchmark. The Judge Agreement tab
-displays that cache rather than calling the three judges for every screen.
-The public probe exposes no separate inference-provider API path. The complete
-hosted workflow is therefore cloud-dependent, not off-grid.
+batched exploratory probe. Authenticated Modal per-model GPU containers and
+the OpenBMB MiniCPM API run live debate; Modal regenerates the fixed judge
+benchmark. The Judge Agreement tab displays that cache. The complete hosted
+workflow is cloud-dependent, not off-grid.
 
 Reproducibility also required more than pinning Python packages. Every model loader now pins an immutable Hugging Face repository commit, preventing an upstream `main` branch change from silently altering live behavior.
+
+The external BeaverTails sample is also bound to dataset revision
+`8401fe609d288129cc684a9b3be6a93e41cfe678` and an ordered 400-row corpus
+SHA-256, so the MiniCPM and specialist-guard comparisons are not seed-only.
 
 Judge regeneration now writes an immutable run artifact before any cache
 promotion. The current artifact binds code revision `00f1a8d`, the corpus hash,
@@ -118,7 +125,11 @@ For the UI, most visible spacing came from Gradio HTML's implicit padding and a 
   quantization robustness.
 - The cached judge and debate artifacts are reproducible records, but live stochastic generation can differ.
 - Human review remains necessary for contested or high-impact deployments.
-- OpenBMB MiniCPM4.1-8B was also evaluated as a fourth (reasoning-model) judge and a prospective subject; its trust_remote_code modeling code (pinned revision) imports is_torch_fx_available, which is removed in the pinned transformers 5.12.0, so it fails to load under this stack. We document this incompatibility rather than downgrade the pinned runtime, and exclude MiniCPM from the live results.
+- OpenBMB MiniCPM4.1-8B is served by the sponsor's hosted API. Its Hub
+  reference is pinned, but the provider does not report the exact served
+  revision; the artifact records that limitation explicitly. The sponsor
+  published an HTTP-only endpoint and shared challenge token, so transport
+  confidentiality is not claimed.
 
 ## Next experiment
 

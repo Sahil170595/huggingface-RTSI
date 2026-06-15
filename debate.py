@@ -12,7 +12,7 @@ can land on different stances. Debating a foregone "deploy a config that lost 90
 points of refusal?" would always vote ROUTE and prove nothing; the debate exists
 to adjudicate real uncertainty.
 
-Three generation backends behind one `generate()` contract:
+Four generation backends behind one `generate()` contract:
   "local" transformers 4-bit (NF4) on CUDA, lazy-load+cache per model_id. The
           dev path for the 4080. Uses the GPU, never CPU.
   "modal" HTTP POST os.environ["MODAL_ENDPOINT"] {model, prompt, max_new_tokens}
@@ -20,6 +20,9 @@ Three generation backends behind one `generate()` contract:
           -> {"text": ..., "quantization": ...}; non-2xx carries a JSON
           {"detail": ...} surfaced as RuntimeError. The production path
           (bigger models).
+  "hybrid" routes OpenBMB MiniCPM4.1-8B to the official hosted MiniCPM API
+          and every other model to Modal. The public contested-case debate uses
+          this path so both providers perform real inference.
   "hf"    huggingface_hub InferenceClient.chat_completion. Present for
           completeness; NOT used now (HF Inference credits are dead).
 
@@ -128,6 +131,7 @@ _MODAL_TIMEOUT_S = 300
 # so the UI can disclose what precision argued the debate. None until a modal
 # call succeeds, or when the endpoint omits the field.
 LAST_MODAL_QUANTIZATION: str | None = None
+OPENBMB_MINICPM_MODEL_ID = "openbmb/MiniCPM4.1-8B"
 
 
 # ---------------------------------------------------------------------------
@@ -395,6 +399,26 @@ def _generate_hf(model_id: str, prompt: str, max_new_tokens: int) -> str:
     return (result.choices[0].message.content or "").strip()
 
 
+def _generate_openbmb(model_id: str, prompt: str, max_new_tokens: int) -> str:
+    """Generate one constitutional-debate turn with hosted MiniCPM4.1-8B."""
+    if model_id != OPENBMB_MINICPM_MODEL_ID:
+        raise ValueError(
+            "The OpenBMB backend is restricted to "
+            f"{OPENBMB_MINICPM_MODEL_ID!r}."
+        )
+    from openbmb_client import chat
+
+    result = chat(
+        [
+            {"role": "system", "content": CONSTITUTION},
+            {"role": "user", "content": prompt},
+        ],
+        max_tokens=max_new_tokens,
+        temperature=0.0,
+    )
+    return str(result["text"]).strip()
+
+
 def generate(
     model_id: str,
     prompt: str,
@@ -406,7 +430,7 @@ def generate(
     Args:
         model_id:       HF model identifier, e.g. "Qwen/Qwen2.5-1.5B-Instruct".
         prompt:         The debate turn (question, or question + peer stances).
-        backend:        "local" (4-bit CUDA), "modal" (HTTP), or "hf" (dead).
+        backend:        "local", "modal", "openbmb", "hybrid", or "hf" (dead).
         max_new_tokens: Generation budget.
 
     Returns the generated text (the constitutional system frame is applied per
@@ -417,10 +441,17 @@ def generate(
         return _generate_local(model_id, prompt, max_new_tokens)
     if backend == "modal":
         return _generate_modal(model_id, prompt, max_new_tokens)
+    if backend == "openbmb":
+        return _generate_openbmb(model_id, prompt, max_new_tokens)
+    if backend == "hybrid":
+        if model_id == OPENBMB_MINICPM_MODEL_ID:
+            return _generate_openbmb(model_id, prompt, max_new_tokens)
+        return _generate_modal(model_id, prompt, max_new_tokens)
     if backend == "hf":
         return _generate_hf(model_id, prompt, max_new_tokens)
     raise ValueError(
-        f"Unknown backend {backend!r}. Choose 'local', 'modal', or 'hf'."
+        f"Unknown backend {backend!r}. Choose 'local', 'modal', 'openbmb', "
+        "'hybrid', or 'hf'."
     )
 
 
@@ -448,17 +479,32 @@ def compute_consensus(final_responses: list[dict]) -> dict:
         Ties break toward ROUTE > CONDITIONAL > DEPLOY (safety-first ordering).
     """
     vote_breakdown: dict[str, int] = {s: 0 for s in STANCES}
-    for resp in final_responses:
+    error_count = sum(bool(resp.get("errored")) for resp in final_responses)
+    valid_responses = [
+        resp for resp in final_responses if not bool(resp.get("errored"))
+    ]
+    for resp in valid_responses:
         stance = resp.get("stance", DEFAULT_STANCE)
         vote_breakdown[stance] = vote_breakdown.get(stance, 0) + 1
 
     total = sum(vote_breakdown.values())
+    if error_count:
+        return {
+            "verdict": STANCE_ROUTE,
+            "vote_breakdown": vote_breakdown,
+            "agreement": 0.0,
+            "consensus_kind": "provider-error",
+            "valid_votes": total,
+            "error_count": error_count,
+        }
     if total == 0:
         return {
             "verdict": DEFAULT_STANCE,
             "vote_breakdown": vote_breakdown,
             "agreement": 0.0,
             "consensus_kind": "tie-break",
+            "valid_votes": 0,
+            "error_count": 0,
         }
 
     # Safety-first tie-break: prefer the more conservative stance on a tie.
@@ -482,6 +528,8 @@ def compute_consensus(final_responses: list[dict]) -> dict:
         "vote_breakdown": vote_breakdown,
         "agreement": agreement,
         "consensus_kind": consensus_kind,
+        "valid_votes": total,
+        "error_count": 0,
     }
 
 
@@ -514,6 +562,15 @@ def consensus_label(consensus: dict) -> dict:
     """
     consensus = consensus or {}
     verdict = str(consensus.get("verdict", DEFAULT_STANCE))
+    if consensus.get("consensus_kind") == "provider-error":
+        return {
+            "label": LABEL_NO_CONSENSUS,
+            "explanation": (
+                f"{int(consensus.get('error_count', 0))} provider response(s) "
+                "failed. Failed turns were excluded from voting and the action "
+                "fails closed to ROUTE."
+            ),
+        }
     try:
         agreement = float(consensus.get("agreement", 0.0))
     except (TypeError, ValueError):
@@ -686,7 +743,7 @@ def run_debate(
 
     rounds = max(1, int(rounds))
     backend_norm = backend.lower().strip()
-    if backend_norm == "modal":
+    if backend_norm in {"modal", "hybrid"}:
         # Reset the disclosure so a stale value from a previous run can never
         # leak into this result if every modal call here fails.
         LAST_MODAL_QUANTIZATION = None
@@ -739,7 +796,7 @@ def run_debate(
         # Remote model calls are independent within a round. Fan them out so
         # Modal can use its per-model container pools concurrently. Keep the
         # local backend sequential because those models share one CUDA device.
-        if backend_norm in {"modal", "hf"} and len(models) > 1:
+        if backend_norm in {"modal", "openbmb", "hybrid", "hf"} and len(models) > 1:
             responses_by_index: dict[int, dict] = {}
             with ThreadPoolExecutor(
                 max_workers=len(models), thread_name_prefix="quantsafe-debate"
@@ -787,8 +844,26 @@ def run_debate(
         "final_verdict": consensus["verdict"],
         "elapsed_s": elapsed_s,
     }
-    if backend_norm == "modal" and LAST_MODAL_QUANTIZATION:
+    if backend_norm in {"modal", "hybrid"} and LAST_MODAL_QUANTIZATION:
         result["quantization"] = LAST_MODAL_QUANTIZATION
+    if backend_norm == "hybrid":
+        final_responses = round_records[-1]["responses"] if round_records else []
+        successful_models = {
+            response["model"]
+            for response in final_responses
+            if not response.get("errored")
+        }
+        providers = []
+        if any(model != OPENBMB_MINICPM_MODEL_ID for model in successful_models):
+            providers.append("Modal")
+        if OPENBMB_MINICPM_MODEL_ID in successful_models:
+            providers.append("OpenBMB")
+        result["providers"] = providers
+        result["provider_errors"] = [
+            response["model"]
+            for response in final_responses
+            if response.get("errored")
+        ]
     return result
 
 
