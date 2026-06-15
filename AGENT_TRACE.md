@@ -1,4 +1,18 @@
-# Codex Build Trace
+# QuantSafe Certifier — Agent Build Trace
+
+QuantSafe Certifier was built by the repository owner orchestrating **two AI coding agents in interleaved passes — Claude Code (Anthropic) and OpenAI Codex** — alongside the owner's own direction and decisions. Neither agent built it alone. The sections below are the build passes, each attributed to the agent that ran it; the two genuinely convergent artifacts — the Nemotron judge and the external-screen API — carry their own attribution notes.
+
+## Who built what
+
+**Claude Code led:** the RTSI scoring core and the live-score tab; the 8-dimension SOTA audit (62 adversarially-verified findings) and the Tier-1 correctness pass; the **Nemotron third judge** (design + build → Fleiss κ 0.7929) with the statistical-uncertainty layer and the published judge benchmark; the editorial "quiet-luxury" UI restyle (`styles.css`); and the **implementation** of the external-screen API (the 637-line `external_screen.py`, `e267d4e`).
+
+**OpenAI Codex led:** the parallel Modal debate (concurrent fan-out, ~195 s → ~35 s); model-revision pinning (`model_revisions.py`); the judge-validation metrics (family-held-out AUC, Wilson intervals); the `semantic_refusal` integration; the **OpenBMB/MiniCPM** integration (`openbmb_client.py`); the demo build (`scripts/build_demo.py`); the Hugging Face org deployment and Playwright QA; and the production hardening / release engineering — the cert-issuer fail-closed gate, the Nemotron evidence hardening (`00f1a8d`), and the external-screen **spec + adversarial-release hardening** (`68a126b`).
+
+**Convergent (neither alone):** the **Nemotron judge** — Claude designed and merged it, Codex hardened it in committed code; and the **external-screen** — Codex spec'd the contract, Claude built it, Codex hardened and shipped it.
+
+---
+
+# Codex Audit, Packaging & Deployment Pass
 
 This is a high-level, reviewable action trace for the final audit pass. It records operations and outcomes without exposing private hidden reasoning.
 
@@ -405,6 +419,8 @@ June 15, 2026.
   the public agent-trace dataset was synchronized in Hub commit
   `c8ed33032ff4c2ca559b05e60c4923b6ccd0b3be`.
 
+OpenAI Codex built the OpenBMB/MiniCPM client and ran this integration and evidence-reconciliation pass, in collaboration with the repository owner.
+
 ---
 
 # Final Production Release
@@ -452,6 +468,10 @@ June 15, 2026.
 - Browser console review found no application execution error. Two host-shell
   metadata requests from Hugging Face returned 400/404 for the Space
   subdomain/avatar chrome; neither affected the app or its API calls.
+
+## Attribution note (external screen)
+
+The "Test Your Own Quant" external-screen feature was a three-step, two-agent collaboration. **OpenAI Codex** wrote the `/screen_external_manifest` API contract and trust-scope spec. **Claude** implemented it — the `external_screen.py` scorer, the strict manifest validation, the UI panel, and the test suites (`e267d4e`). **Codex** then ran the adversarial release-hardening and the production deploy described in the two subsections after the build (`68a126b`, Space PR #23). The next subsection is Claude's build; the two that follow are Codex's hardening and release.
 
 ## Test-your-own-quant external screen
 
@@ -556,3 +576,5 @@ June 15, 2026.
   completed in 38.0 seconds with a 67% `CONDITIONAL` consensus. This confirmed
   the ZeroGPU, Modal, and MiniCPM/OpenBMB sponsor paths still worked after the
   release.
+
+OpenAI Codex ran this production-release engineering and deployment-verification pass, in collaboration with the repository owner. The external-screen *build* within it was Claude's, per the attribution note above.
